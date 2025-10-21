@@ -8,13 +8,14 @@ import Login from '@/components/Login';
 
 export default function Home() {
   const [user, setUser] = useState<any>(null);
-
+  const [loading, setLoading] = useState(true)
   useEffect(() => {
     const savedUser = localStorage.getItem('user');
     if (savedUser) {
       const parsed = JSON.parse(savedUser);
       setUser(parsed);
     }
+    setLoading(false)
   }, []);
 
   useEffect(() => {
@@ -27,6 +28,18 @@ export default function Home() {
       };
     }
   }, [user]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        {/* Loader Spinner */}
+        <div className="flex flex-col items-center">
+          <div className="w-12 h-12 border-4 border-green-500 border-dashed rounded-full animate-spin" />
+          <p className="mt-4 text-sm text-gray-500">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center">
