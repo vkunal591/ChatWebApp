@@ -29,6 +29,7 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
     const [isVideoCall, setIsVideoCall] = useState(false);
     const [callingUser, setCallingUser] = useState<any>(null);
     const ringtoneRef = useRef<HTMLAudioElement | null>(null);
+    const [selectedMedia, setSelectedMedia] = useState<File | null>(null);
 
     const servers = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
 
@@ -232,19 +233,60 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
         fetchFriends();
     }, []);
 
-    const sendMessage = () => {
-        if (!message || !selectedFriend) return;
-        const msg = {
+    const sendMessage = async () => {
+        // Don’t send if no message or media selected
+        if ((!message.trim() && !selectedMedia) || !selectedFriend) return;
+
+        // Create message base object
+        const msg: any = {
             sender: user.id,
             receiver: selectedFriend._id,
-            content: message,
+            content: message.trim(),
+            type: selectedMedia ? "media" : "text",
+            timestamp: new Date().toISOString(),
         };
 
-        socket.emit("sendMessage", msg);
-        // setMessages(prev => [...prev, msg]);
-        console.log(messages)
-        setMessage("");
-        socket.emit("stopTyping", { to: selectedFriend._id, from: user.username });
+        try {
+            // If a media file is selected — upload to backend first
+            if (selectedMedia) {
+                const formData = new FormData();
+                formData.append("file", selectedMedia);
+                formData.append("sender", user.id);
+                formData.append("receiver", selectedFriend._id);
+
+                const uploadRes = await fetch(`${BASE_URL}/api/upload`, {
+                    method: "POST",
+                    headers: { Authorization: `Bearer ${user.token}` },
+                    body: formData,
+                });
+
+                const uploadData = await uploadRes.json();
+                if (!uploadRes.ok || !uploadData.url) {
+                    console.error("Upload failed:", uploadData);
+                    alert("Failed to upload file");
+                    return;
+                }
+
+                // Add file URL to message
+                msg.mediaUrl = uploadData.url;
+                msg.fileName = selectedMedia.name;
+                msg.fileType = selectedMedia.type;
+            }
+
+            // Emit to socket server
+            socket.emit("sendMessage", msg);
+
+            // Optimistically update UI
+            // setMessages((prev) => [...prev, msg]);
+
+            // Reset fields
+            setMessage("");
+            setSelectedMedia(null);
+            socket.emit("stopTyping", { to: selectedFriend._id, from: user.username });
+        } catch (error) {
+            console.error("Error sending message:", error);
+            alert("Something went wrong while sending your message");
+        }
     };
 
     const handleTyping = (val: string) => {
@@ -369,25 +411,93 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
                                         </span>
                                     </div>
                                 ))}
+                                {messages.map((msg, i) => (
+                                    <div key={i} className={`my-1 ${msg.sender === user.id ? "text-right" : "text-left"}`}>
+                                        <div
+                                            className={`inline-block px-3 py-2 rounded-lg max-w-[70%] ${msg.sender === user.id ? "bg-green-500 text-white" : "bg-gray-200 text-gray-800"
+                                                }`}
+                                        >
+                                            {msg.type === "media" && msg.mediaUrl ? (
+                                                msg.mediaUrl.match(/\.(jpeg|jpg|png|gif)$/i) ? (
+                                                    <img src={msg.mediaUrl} alt="media" className="rounded-lg mb-1 max-h-40" />
+                                                ) : msg.mediaUrl.match(/\.(mp4|webm|ogg)$/i) ? (
+                                                    <video src={msg.mediaUrl} controls className="rounded-lg mb-1 max-h-40" />
+                                                ) : (
+                                                    <a href={msg.mediaUrl} target="_blank" className="underline">
+                                                        📎 Download File
+                                                    </a>
+                                                )
+                                            ) : (
+                                                msg.content
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
                                 {typingUser && (
                                     <p className="text-xs italic text-gray-400">{typingUser} is typing...</p>
                                 )}
                                 <div ref={messagesEndRef}></div>
                             </div>
-                            <div className="border-t p-3 flex items-center">
-                                <input
-                                    type="text"
-                                    value={message}
-                                    onChange={(e) => handleTyping(e.target.value)}
-                                    placeholder="Type a message..."
-                                    className="flex-1 border rounded-l px-3 py-2 text-sm"
-                                />
-                                <button
-                                    onClick={sendMessage}
-                                    className="bg-[#8aa234] hover:bg-[#7d922e] text-white px-4 py-2 rounded-r"
-                                >
-                                    ➤
-                                </button>
+                            {/* Message Input + Media Upload */}
+                            <div className="border-t p-3 flex flex-col gap-2">
+                                {/* Media preview (WhatsApp-style) */}
+                                {selectedMedia && (
+                                    <div className="flex items-center gap-3 bg-gray-100 p-2 rounded">
+                                        {selectedMedia.type.startsWith("image/") ? (
+                                            <img
+                                                src={URL.createObjectURL(selectedMedia)}
+                                                alt="preview"
+                                                className="w-16 h-16 object-cover rounded"
+                                            />
+                                        ) : selectedMedia.type.startsWith("video/") ? (
+                                            <video
+                                                src={URL.createObjectURL(selectedMedia)}
+                                                className="w-20 h-16 rounded"
+                                                controls
+                                            />
+                                        ) : (
+                                            <div className="text-sm bg-gray-200 px-3 py-1 rounded">
+                                                📄 {selectedMedia.name}
+                                            </div>
+                                        )}
+                                        <button
+                                            onClick={() => setSelectedMedia(null)}
+                                            className="text-red-500 text-sm font-semibold hover:underline"
+                                        >
+                                            ✕ Remove
+                                        </button>
+                                    </div>
+                                )}
+
+                                {/* Message + send area */}
+                                <div className="flex items-center gap-2">
+                                    <label className="cursor-pointer flex items-center justify-center w-10 h-10 bg-gray-200 rounded-full hover:bg-gray-300">
+                                        📎
+                                        <input
+                                            type="file"
+                                            accept="image/*,video/*,application/pdf"
+                                            className="hidden"
+                                            onChange={(e) => {
+                                                const file = e.target.files?.[0];
+                                                if (file) setSelectedMedia(file);
+                                            }}
+                                        />
+                                    </label>
+
+                                    <input
+                                        type="text"
+                                        value={message}
+                                        onChange={(e) => handleTyping(e.target.value)}
+                                        placeholder="Type a message..."
+                                        className="flex-1 border rounded-l px-3 py-2 text-sm"
+                                    />
+                                    <button
+                                        onClick={sendMessage}
+                                        className="bg-[#8aa234] hover:bg-[#7d922e] text-white px-4 py-2 rounded-r"
+                                    >
+                                        ➤
+                                    </button>
+                                </div>
                             </div>
                         </>
                     ) : (
