@@ -1,1 +1,1 @@
-export const BASE_URL = `http://192.168.224.2:5000`;
+export const BASE_URL = `https://chatwebserver-tau.vercel.app`;
