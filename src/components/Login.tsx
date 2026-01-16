@@ -61,7 +61,7 @@ export default function Login({ setUser }: any) {
             </button>
           </form>
 
-          {error && <p className="text-red-500 text-sm mt-2 text-center">{error}</p>}
+          {error && <p className="text-blue-500 text-sm mt-2 text-center">{error}</p>}
 
           <div className="mt-4 text-center">
             <button

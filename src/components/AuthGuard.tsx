@@ -22,7 +22,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
             Authorization: `Bearer ${token}`,
           },
         });
-
+        console.log(res)
         if (!res.ok) throw new Error('Invalid token');
         const data = await res.json();
 

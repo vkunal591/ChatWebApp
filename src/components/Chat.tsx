@@ -30,8 +30,12 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
     const [callingUser, setCallingUser] = useState<any>(null);
     const ringtoneRef = useRef<HTMLAudioElement | null>(null);
     const [selectedMedia, setSelectedMedia] = useState<File | null>(null);
+    const beepRef = useRef<HTMLAudioElement | null>(null);
 
     const servers = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+    useEffect(() => {
+        beepRef.current = new Audio("/sounds/message.mp3");
+    }, []);
 
     useEffect(() => {
         ringtoneRef.current = new Audio('/sounds/ringtone.mp3');
@@ -60,8 +64,17 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
         socket.on("callEnded", () => endCall());
 
         socket.on("receiveMessage", (msg) => {
-            setMessages(prev => [...prev, msg]);
+            if (!selectedFriend) return;
+
+            const isForThisChat =
+                (msg.sender === selectedFriend._id && msg.receiver === user.id) ||
+                (msg.sender === user.id && msg.receiver === selectedFriend._id);
+
+            if (isForThisChat) {
+                setMessages(prev => [...prev, msg]);
+            }
         });
+
 
         socket.on("onlineUsers", (users: string[]) => {
             setOnlineUsers(users);
@@ -299,8 +312,34 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
         }
     };
 
+
+    useEffect(() => {
+        const handleReceiveMessage = (msg: any) => {
+            if (!selectedFriend) return;
+
+            const isForThisChat =
+                (msg.sender === selectedFriend._id && msg.receiver === user.id) ||
+                (msg.sender === user.id && msg.receiver === selectedFriend._id);
+
+            if (isForThisChat) {
+                setMessages(prev => [...prev, msg]);
+
+                if (beepRef.current) {
+                    beepRef.current.currentTime = 0;
+                    beepRef.current.play().catch(() => { });
+                }
+            }
+        };
+
+        socket.on("receiveMessage", handleReceiveMessage);
+
+        return () => {
+            socket.off("receiveMessage", handleReceiveMessage); // ✔ OK now, returns void
+        };
+    }, [socket, selectedFriend]);
+
     return (
-        <div className="flex flex-col h-[90vh] w-full rounded-lg bg-[#f7f8f3] shadow-lg ">
+        <div className="flex flex-col h-screen w-full rounded-lg bg-[#f7f8f3] shadow-lg ">
             {/* Top bar */}
             <div className="bg-[#8aa234] text-white  flex justify-between px-6 py-3 items-center">
                 <div className="font-bold text-lg">LocalConnect</div>
@@ -404,35 +443,61 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
                                 </div>
                             </div>
                             <div className="flex-1 p-4 overflow-y-auto">
-                                {messages && messages.map((msg, i) => (
-                                    <div key={i} className={`my-1 ${msg.sender === user.id ? "text-right" : "text-left"}`}>
-                                        <span className={`inline-block px-3 py-2 rounded-lg ${msg.sender === user.id ? "bg-green-500 text-white" : "bg-gray-200 text-gray-800"}`}>
-                                            {msg.content}
-                                        </span>
-                                    </div>
-                                ))}
                                 {messages.map((msg, i) => (
-                                    <div key={i} className={`my-1 ${msg.sender === user.id ? "text-right" : "text-left"}`}>
+                                    <div
+                                        key={i}
+                                        className={`my-1 ${msg.sender === user.id ? 'text-right' : 'text-left'
+                                            }`}
+                                    >
                                         <div
-                                            className={`inline-block px-3 py-2 rounded-lg max-w-[70%] ${msg.sender === user.id ? "bg-green-500 text-white" : "bg-gray-200 text-gray-800"
+                                            className={`inline-block overflow-hidden line-clamp-2 text-wrap px-3 py-2 rounded-lg max-w-[70%] ${msg.sender === user.id ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-800'
                                                 }`}
                                         >
-                                            {msg.type === "media" && msg.mediaUrl ? (
+                                            {msg.type === 'media' && msg.mediaUrl ? (
                                                 msg.mediaUrl.match(/\.(jpeg|jpg|png|gif)$/i) ? (
-                                                    <img src={msg.mediaUrl} alt="media" className="rounded-lg mb-1 max-h-40" />
+                                                    <img
+                                                        src={msg.mediaUrl}
+                                                        alt="media"
+                                                        className="rounded-lg mb-1 max-h-40"
+                                                    />
                                                 ) : msg.mediaUrl.match(/\.(mp4|webm|ogg)$/i) ? (
-                                                    <video src={msg.mediaUrl} controls className="rounded-lg mb-1 max-h-40" />
+                                                    <video
+                                                        src={msg.mediaUrl}
+                                                        controls
+                                                        className="rounded-lg mb-1 max-h-40"
+                                                    />
                                                 ) : (
-                                                    <a href={msg.mediaUrl} target="_blank" className="underline">
+                                                    <a
+                                                        href={msg.mediaUrl}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="underline"
+                                                    >
                                                         📎 Download File
                                                     </a>
                                                 )
                                             ) : (
-                                                msg.content
+                                                // Process text to convert URLs into clickable links
+                                                msg.content.split(/(https?:\/\/[^\s]+)/g).map((part, idx) =>
+                                                    part.match(/https?:\/\/[^\s]+/) ? (
+                                                        <a
+                                                            key={idx}
+                                                            href={part}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="underline text-blue-500"
+                                                        >
+                                                            {part}
+                                                        </a>
+                                                    ) : (
+                                                        <span key={idx}>{part}</span>
+                                                    )
+                                                )
                                             )}
                                         </div>
                                     </div>
                                 ))}
+
                                 {typingUser && (
                                     <p className="text-xs italic text-gray-400">{typingUser} is typing...</p>
                                 )}
@@ -488,9 +553,16 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
                                         type="text"
                                         value={message}
                                         onChange={(e) => handleTyping(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter") {
+                                                e.preventDefault();   // prevents newline or form submission
+                                                sendMessage();
+                                            }
+                                        }}
                                         placeholder="Type a message..."
                                         className="flex-1 border rounded-l px-3 py-2 text-sm"
                                     />
+
                                     <button
                                         onClick={sendMessage}
                                         className="bg-[#8aa234] hover:bg-[#7d922e] text-white px-4 py-2 rounded-r"
