@@ -4,8 +4,7 @@ import { socket } from './socketContext';
 import Chat from '@/components/Chat';
 import Login from '@/components/Login';
 import { BASE_URL } from '@/api'; // your backend base URL
-import OfflineMap from '@/components/OfflineMap';
-import Map from '@/components/Map';
+
 
 export default function Home() {
   const [user, setUser] = useState<any>(null);
@@ -83,7 +82,7 @@ export default function Home() {
         <>
           <Chat user={user} socket={socket} setUser={setUser} />
           {/* <OfflineMap /> */}
-          {/*<Map /> */}
+          {/* <Map />  */}
         </>
       ) : (
         <Login
