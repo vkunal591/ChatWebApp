@@ -4,14 +4,25 @@ import { useEffect, useState, useRef } from "react";
 import { BASE_URL } from "@/api";
 import CallModal from "./modal/CallModal";
 import { FaMap, FaPhone, FaVideo } from "react-icons/fa";
+import { ShieldCheck, Paperclip, Fingerprint, Send,Lock,Clock } from "lucide-react";
 import { Socket } from "socket.io-client";
 import Link from "next/link";
+import { FaShield } from "react-icons/fa6";
+import {
+  FiMessageSquare,
+  FiFolder,
+  FiFileText,
+  FiSettings,
+  FiLogOut,
+  FiSearch,
+} from "react-icons/fi";
 
 type ChatProps = {
   user: { id: string; token: string; username: string };
   socket: Socket;
   setUser: (user: any) => void;
 };
+
 
 const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
   const [friends, setFriends] = useState<any[]>([]);
@@ -32,7 +43,6 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
   const ringtoneRef = useRef<HTMLAudioElement | null>(null);
   const [selectedMedia, setSelectedMedia] = useState<File | null>(null);
   const beepRef = useRef<HTMLAudioElement | null>(null);
- 
 
   const servers = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
   useEffect(() => {
@@ -195,6 +205,10 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
   const addFriend = async () => {
     if (!friendUsername.trim()) return alert("Enter a username");
     try {
+        if (!user?.token) {
+          alert("Unauthorized");
+          return;
+        }
       const res = await fetch(`${BASE_URL}/api/friends`, {
         method: "POST",
         headers: {
@@ -218,42 +232,45 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
   const fetchFriends = async () => {
     try {
       const res = await fetch(`${BASE_URL}/api/friends`, {
+        method:"GET",
         headers: { Authorization: `Bearer ${user.token}` },
       });
+      console.log("friends:====", res);
       // console.log("friends:", friends, Array.isArray(friends));
 
       const data = await res.json();
-      //  console.log("friends:", data);
       setFriends(data);
     } catch (error) {
       console.error("Fetch friends error:", error);
     }
   };
-
-  const fetchMessages = async () => {
-    try {
-      const res = await fetch(
-        `${BASE_URL}/api/messages/${selectedFriend?._id}`,
-        {
-          headers: { Authorization: `Bearer ${user.token}` },
-        },
-      );
-      const data = await res.json();
-      setMessages(data);
-    } catch (error) {
-      console.error("Fetch friends error:", error);
-    }
-  };
-  useEffect(() => {
-    console.log(selectedFriend);
-    if (selectedFriend) {
-      fetchMessages();
-    }
-  }, [selectedFriend]);
-
   useEffect(() => {
     fetchFriends();
   }, []);
+
+const fetchMessages = async (friendId: string) => {
+  try {
+    const res = await fetch(`${BASE_URL}/api/messages/${friendId}`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${user.token}` },
+    });
+    console.log("=====",res);
+    
+    const data = await res.json();
+    setMessages(data);
+  } catch (error) {
+    console.error("Fetch messages error:", error);
+  }
+};
+
+useEffect(() => {
+  if (!selectedFriend?._id) return;
+
+  setMessages([]);
+  fetchMessages(selectedFriend._id);
+}, [selectedFriend?._id]);
+
+
 
   const sendMessage = async () => {
     // Don’t send if no message or media selected
@@ -352,281 +369,305 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
     };
   }, [socket, selectedFriend]);
 
+
+
   return (
     <div className="flex flex-col h-screen w-full rounded-lg bg-[#f7f8f3] shadow-lg ">
-      {/* Top bar */}
-      <div className="bg-[#07522c] text-white  flex justify-between px-6 py-3 items-center">
-        <div className="font-bold text-lg">LocalConnect</div>
-        <div className="flex items-center gap-4">
-          <span className="flex items-center gap-1 text-sm">
-            <span className="w-2 h-2 bg-green-400 rounded-full" />
-            Connected
-          </span>
-          <div className="bg-[#a5b863] text-sm px-3 py-1 rounded-full">
-            {user.username}
-          </div>
-          <button
-            onClick={() => {
-              localStorage.removeItem("token");
-              socket.disconnect();
-              setUser(null);
-            }}
-            className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm"
-          >
-            Logout
-          </button>
-        </div>
-      </div>
-
       {/* Main layout */}
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
-        <div className="w-1/4 bg-white border-r flex flex-col">
-          <div className="p-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl text-[#07522c] font-bold mb-3">
-                Contacts
-              </h2>
-
-              <Link
-                href={"/on-map"}
-                className="  rounded-md p-1 m-1 w-1/4 flex items-center justify-center gap-2 bg-[#07522c]/80 border-2 border-gray-300 shadow shadow-[#07522c] "
-              >
-                <FaMap size={18} color="white" /> Map
-              </Link>
+        <div className="w-[320px] h-screen bg-white border-r flex flex-col justify-between">
+          {/* TOP */}
+          <div className="p-4 space-y-6">
+            {/* LOGO */}
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-lg bg-[#0B1F3B] flex items-center justify-center">
+                <img
+                  src="/assets/logo/localchatlogo.png"
+                  alt="logo"
+                  className="object-contain h-8 w-8 filter brightness-0 invert "
+                />
+              </div>
+              <div>
+                <h1 className="text-[#0B1F3B] font-bold text-lg leading-tight">
+                  LocalChat
+                </h1>
+                <p className="text-xs text-slate-400 tracking-wide">
+                  SECURE TALK
+                </p>
+              </div>
             </div>
             <input
               type="text"
-              placeholder="Add friend..."
               value={friendUsername}
               onChange={(e) => setFriendUsername(e.target.value)}
-              className="w-full p-2 border text-[#07522c] rounded mb-2"
+              onClick={(e) => e.stopPropagation()}
+              placeholder="Add friend…"
+              className="
+    w-full mb-2 px-3 py-1.5 text-sm
+    rounded-md
+    border border-[#1f3a5f]
+    text-gray-600 placeholder-gray-400
+    focus:outline-none focus:ring-1 focus:ring-[#1f3a5f]/400 focus:border-[#1f3a5f]/400
+    transition
+  "
             />
+
             <button
+              disabled={!friendUsername}
               onClick={addFriend}
-              className="w-full bg-[#07522c] hover:bg-[#07522c]/70 text-white p-2 rounded"
+              className="
+    w-full mb-4 py-1.5 text-sm font-semibold
+    rounded-md
+    bg-gradient-to-br from-[#0f2a44] to-[#1e4b6e]
+    text-white shadow
+    transition
+    disabled:opacity-50 disabled:cursor-not-allowed
+  "
             >
               Add Friend
             </button>
-          </div>
-          <div className="flex-1 overflow-y-auto">
-            <h4 className="text-xs font-semibold px-3 py-1 text-gray-500">
-              ONLINE
-            </h4>
-            {friends &&
-              friends
-                .filter((f) => onlineUsers.includes(f._id))
-                .map((friend) => (
-                  <div
-                    key={friend._id}
-                    onClick={() => setSelectedFriend(friend)}
-                    className={`cursor-pointer flex items-center gap-2 px-3 py-2 hover:bg-gray-100 ${selectedFriend?._id === friend._id ? "bg-green-100" : ""}`}
-                  >
-                    <div className="w-8 h-8 bg-green-500 text-[#07522c] flex items-center justify-center rounded-full font-semibold">
-                      {friend.username[0]}
-                    </div>
-                    <div>
-                      <p className="text-sm text-[#07522c] font-medium">
-                        {friend.username}
-                      </p>
-                      <p className="text-xs text-green-500">Available</p>
-                    </div>
-                  </div>
-                ))}
-            <h4 className="text-xs font-semibold px-3 py-1 mt-2 text-gray-500">
-              OFFLINE
-            </h4>
-            {friends
-              .filter((f) => !onlineUsers.includes(f._id))
-              .map((friend) => (
-                <div
-                  key={friend._id}
-                  onClick={() => setSelectedFriend(friend)}
-                  className={`cursor-pointer flex items-center gap-2 px-3 py-2 hover:bg-gray-100 ${selectedFriend?._id === friend._id ? "bg-green-100" : ""}`}
-                >
-                  <div className="w-8 h-8 bg-gray-300 text-[#07522c] flex items-center justify-center rounded-full font-semibold">
-                    {friend.username[0]}
-                  </div>
-                  <div>
-                    <p className="text-sm text-[#07522c] font-medium">
-                      {friend.username}
-                    </p>
-                    <p className="text-xs text-gray-400">Offline</p>
-                  </div>
+
+            {/* PROFILE */}
+            <div className="flex items-center gap-3 border rounded-xl p-3">
+              <div className="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center">
+                <img
+                  src="/assets/logo/localchatlogo.png"
+                  alt="logo"
+                  className="object-contain h-8 w-8 "
+                />
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold text-sm text-slate-800">
+                  {user.username}
+                </p>
+                <span className="inline-block mt-1 text-xs px-2 py-[2px] rounded bg-green-100 text-green-600 font-semibold">
+                  LEVEL - 3
+                </span>
+              </div>
+            </div>
+
+            {/* NAV */}
+            <nav className="space-y-1 text-sm">
+              {/* ACTIVE ITEM */}
+              <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-blue-50 border-l-4 border-blue-800">
+                <div className="flex items-center gap-3 text-blue-900 font-semibold">
+                  <FiMessageSquare size={18} />
+                  Messages
                 </div>
-              ))}
+                <span className="h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center">
+                  3
+                </span>
+              </div>
+
+              {/* OTHER ITEMS */}
+              <div className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer">
+                <FiFolder size={18} />
+                Directory
+              </div>
+
+              <div className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer">
+                <FiFileText size={18} />
+                Files
+              </div>
+
+              <div className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer">
+                <FiFileText size={18} />
+                Reports
+              </div>
+
+              <div className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer">
+                <FiSettings size={18} />
+                Settings
+              </div>
+            </nav>
+            {/* LOGOUT */}
+            <div className="mt-25">
+              <button
+                onClick={() => {
+                  localStorage.removeItem("token");
+                  socket.disconnect();
+                  setUser(null);
+                }}
+                className="w-full flex items-center gap-3 px-4 py-2 rounded-lg border border-red-200 bg-red-50 text-red-500 font-semibold hover:bg-red-500 hover:text-white transition justify-center"
+              >
+                <FiLogOut size={18} />
+                Logout
+              </button>
+            </div>
           </div>
         </div>
 
+        <div className="w-[400px] h-screen border-r border-l bg-white flex flex-col">
+          {/* HEADER */}
+          <div className="p-4 space-y-3">
+            <h2 className="text-sm font-bold tracking-wide text-slate-900">
+              ACTIVE FRIENDS
+            </h2>
+
+            {/* SEARCH */}
+            <div className="relative">
+              <FiSearch
+                size={16}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+              />
+              <input
+                type="text"
+                placeholder="Search..."
+                className="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-800"
+              />
+            </div>
+          </div>
+
+          {/* CHANNEL LIST */}
+          <div className="flex-1 overflow-y-auto">
+            {friends.map((friend) => (
+              <div
+                key={friend._id}
+                onClick={() => setSelectedFriend(friend)}
+                className="cursor-pointer"
+              >
+                <ChannelItem name={friend.username} />
+              </div>
+            ))}
+          </div> 
+
+        </div>
         {/* Chat window */}
-        <div className="flex-1 flex flex-col bg-white">
-          {selectedFriend ? (
-            <>
-              <div className="border-b px-4 py-2 flex justify-between items-center">
-                <div>
-                  <h2 className="font-semibold text-[#07522c] ">
-                    {selectedFriend.username}
-                  </h2>
-                  <p className="text-xs text-gray-500">Last seen recently</p>
+
+        <div className=" bg-[#f4f7fb] flex items-center justify-center w-full ">
+          {/* Chat Container */}
+          <div className="w-full max-w-4xl bg-white shadow-xl  overflow-hidden h-full">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b ">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center">
+                  <img
+                    src="/assets/logo/localchatlogo.png"
+                    alt="logo"
+                    className="object-contain h-8 w-8 "
+                  />
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => startCall("audio")}
-                    className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded flex items-center gap-2"
-                  >
-                    <FaPhone /> Voice
-                  </button>
-                  <button
-                    onClick={() => startCall("video")}
-                    className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded flex items-center gap-2"
-                  >
-                    <FaVideo /> Video
-                  </button>
+                <div>
+                  <h2 className="font-semibold text-slate-800">
+                    {selectedFriend ? selectedFriend.username : "Select a chat"}
+                  </h2>
+
+                  <p className="text-xs text-slate-500">
+                    FIELD OFFICER • DELHI
+                  </p>
                 </div>
               </div>
-              <div className="flex-1 p-4 overflow-y-auto">
-                {messages.map((msg, i) => (
+
+              <span className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-md bg-orange-100 text-orange-700 border border-orange-500">
+                <Lock size={12} className="text-orange-700" />
+                TLS 1.3
+              </span>
+            </div>
+
+            {/* Messages */}
+            <div className="bg-[#f8fafc] p-6 space-y-6 h-[460px] overflow-y-auto">
+              {/* Date badge */}
+              <div className="flex items-center justify-center">
+                <div className="px-3 py-1 rounded-full bg-slate-200 text-[10px] font-semibold text-slate-600">
+                  Today
+                </div>
+              </div>
+
+              {messages.map((msg: any, index: number) => {
+                const isOutgoing = msg.sender === user.id;
+
+                return (
                   <div
-                    key={i}
-                    className={`my-1 ${
-                      msg.sender === user.id ? "text-right" : "text-left"
-                    }`}
+                    key={index}
+                    className={`max-w-md ${isOutgoing ? "ml-auto text-right" : ""}`}
                   >
+                    {/* Confidential label */}
+                    <div className="mb-1">
+                      <span className="text-[8px] text-slate-700 bg-amber-500 rounded-[5px] px-1.5 py-0.5 font-semibold inline-block">
+                        CONFIDENTIAL
+                      </span>
+                    </div>
+
+                    {/* Message bubble */}
                     <div
-                      className={`inline-block overflow-hidden line-clamp-2 text-wrap px-3 py-2 rounded-lg max-w-[70%] ${
-                        msg.sender === user.id
-                          ? "bg-green-500 text-white"
-                          : "bg-gray-200 text-gray-800"
-                      }`}
+                      className={`mt-1 rounded-xl px-4 py-3 shadow inline-block max-w-full
+  break-words whitespace-pre-wrap ${
+    isOutgoing
+      ? "bg-gradient-to-br from-[#0f2a44] to-[#1e4b6e] text-white"
+      : "bg-white text-slate-700"
+  }`}
                     >
-                      {msg.type === "media" && msg.mediaUrl ? (
-                        msg.mediaUrl.match(/\.(jpeg|jpg|png|gif)$/i) ? (
-                          <img
-                            src={msg.mediaUrl}
-                            alt="media"
-                            className="rounded-lg mb-1 max-h-40"
-                          />
-                        ) : msg.mediaUrl.match(/\.(mp4|webm|ogg)$/i) ? (
-                          <video
-                            src={msg.mediaUrl}
-                            controls
-                            className="rounded-lg mb-1 max-h-40"
-                          />
-                        ) : (
-                          <a
-                            href={msg.mediaUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="underline"
-                          >
-                            📎 Download File
-                          </a>
-                        )
-                      ) : (
-                        // Process text to convert URLs into clickable links
-                        msg.content
-                          .split(/(https?:\/\/[^\s]+)/g)
-                          .map((part: any, idx: any) =>
-                            part.match(/https?:\/\/[^\s]+/) ? (
-                              <a
-                                key={idx}
-                                href={part}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="underline text-blue-500"
-                              >
-                                {part}
-                              </a>
-                            ) : (
-                              <span key={idx}>{part}</span>
-                            ),
-                          )
+                      {/* TEXT MESSAGE */}
+                      {msg.type === "text" && (
+                        <p className="text-sm break-words whitespace-pre-wrap">
+                          {msg.content}
+                        </p>
+                      )}
+
+                      {/* MEDIA MESSAGE */}
+                      {msg.type === "media" && (
+                        <>
+                          {msg.fileType?.startsWith("image") ? (
+                            <img
+                              src={msg.mediaUrl}
+                              alt="media"
+                              className="rounded-md max-w-xs"
+                            />
+                          ) : (
+                            <a
+                              href={msg.mediaUrl}
+                              target="_blank"
+                              className="text-sm underline"
+                            >
+                              📎 {msg.fileName}
+                            </a>
+                          )}
+                        </>
                       )}
                     </div>
-                  </div>
-                ))}
 
-                {typingUser && (
-                  <p className="text-xs italic text-gray-400">
-                    {typingUser} is typing...
-                  </p>
-                )}
-                <div ref={messagesEndRef}></div>
-              </div>
-              {/* Message Input + Media Upload */}
-              <div className="border-t p-3 flex flex-col gap-2">
-                {/* Media preview (WhatsApp-style) */}
-                {selectedMedia && (
-                  <div className="flex items-center gap-3 bg-gray-100 p-2 rounded">
-                    {selectedMedia.type.startsWith("image/") ? (
-                      <img
-                        src={URL.createObjectURL(selectedMedia)}
-                        alt="preview"
-                        className="w-16 h-16 object-cover rounded"
-                      />
-                    ) : selectedMedia.type.startsWith("video/") ? (
-                      <video
-                        src={URL.createObjectURL(selectedMedia)}
-                        className="w-20 h-16 rounded"
-                        controls
-                      />
-                    ) : (
-                      <div className="text-sm bg-gray-200 px-3 py-1 rounded">
-                        📄 {selectedMedia.name}
-                      </div>
-                    )}
-                    <button
-                      onClick={() => setSelectedMedia(null)}
-                      className="text-red-500 text-sm font-semibold hover:underline"
+                    {/* Timestamp */}
+                    <p
+                      className={`mt-1 flex gap-2 text-[10px] text-slate-400 ${
+                        isOutgoing ? "justify-end" : ""
+                      }`}
                     >
-                      ✕ Remove
-                    </button>
+                      <span>
+                        {new Date(msg.timestamp).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                    </p>
                   </div>
-                )}
-
-                {/* Message + send area */}
-                <div className="flex items-center gap-2">
-                  <label className="cursor-pointer flex items-center justify-center w-10 h-10 bg-gray-200 rounded-full hover:bg-gray-300">
-                    📎
-                    <input
-                      type="file"
-                      accept="image/*,video/*,application/pdf"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) setSelectedMedia(file);
-                      }}
-                    />
-                  </label>
-
-                  <input
-                    type="text"
-                    value={message}
-                    onChange={(e) => handleTyping(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault(); // prevents newline or form submission
-                        sendMessage();
-                      }
-                    }}
-                    placeholder="Type a message..."
-                    className="flex-1 text-gray-700 border rounded-l px-3 py-2 text-sm"
-                  />
-
-                  <button
-                    onClick={sendMessage}
-                    className="bg-[#07522c]/80 hover:bg-[#07522c] text-white px-4 py-2 rounded-r"
-                  >
-                    ➤
-                  </button>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="flex-1 flex items-center justify-center text-gray-400">
-              Select a contact to start chatting
+                );
+              })}
             </div>
-          )}
+
+            {/* Input */}
+            <div className="flex items-center gap-3 px-6 py-4 bg-white">
+              <button className="text-slate-400 hover:text-slate-600">
+                <Paperclip size={18} />
+              </button>
+              <input
+                placeholder="Type message..."
+                value={message}
+                onChange={(e) => handleTyping(e.target.value)}
+                className="flex-1 rounded-lg border px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+
+              <button className="text-slate-400 hover:text-slate-600">
+                <Fingerprint size={18} />
+              </button>
+              <button
+                onClick={sendMessage}
+                className="bg-[#0f2a44] text-white p-2 rounded-full hover:bg-[#163b5c]"
+              >
+                <Send size={16} />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -686,3 +727,77 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
 };
 
 export default Chat;
+const ChannelItem = ({
+  name,
+  message,
+  time,
+  unread,
+  status = "offline",
+  active = false,
+  urgent = false,
+  avatar,
+}: any) => {
+  const statusColorMap: any = {
+    online: "bg-green-500",
+    offline: "bg-gray-400",
+    pending: "bg-yellow-400",
+    away: "bg-orange-400",
+  };
+
+  return (
+    <div
+      className={`relative flex items-center gap-3 px-4 py-3 cursor-pointer
+      ${urgent ? "bg-red-50" : "hover:bg-slate-50"}`}
+    >
+      {(active || urgent) && (
+        <span
+          className={`absolute left-0 top-0 h-full w-1
+          ${urgent ? "bg-red-600" : "bg-blue-800"}`}
+        />
+      )}
+
+      <div className="relative">
+        <div className="h-10 w-10 rounded-full border-2 border-slate-200 flex items-center justify-center bg-white">
+          <img
+            src={avatar || "/assets/logo/localchatlogo.png"}
+            alt={name}
+            className="object-cover h-8 w-8 rounded-full"
+          />
+        </div>
+
+        <span
+          className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white
+          ${urgent ? "bg-red-500" : statusColorMap[status]}`}
+        />
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between">
+          <p
+            className={`text-sm font-semibold truncate
+            ${urgent ? "text-red-600" : "text-slate-900"}`}
+          >
+            {name}
+          </p>
+          {time && <span className="text-xs text-slate-400">{time}</span>}
+        </div>
+
+        <p
+          className={`text-xs truncate
+          ${urgent ? "text-red-600 font-semibold" : "text-slate-500"}`}
+        >
+          {message}
+        </p>
+      </div>
+
+      {unread > 0 && (
+        <span
+          className={`h-5 w-5 flex items-center justify-center rounded-full text-xs text-white font-semibold
+          ${urgent ? "bg-red-600" : "bg-blue-800"}`}
+        >
+          {unread}
+        </span>
+      )}
+    </div>
+  );
+};

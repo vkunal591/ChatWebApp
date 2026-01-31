@@ -1,41 +1,218 @@
 @import "tailwindcss";
 
-/* ===============================
-   THEME VARIABLES
-================================ */
-
-:root {
-  --background: #1b583c;
-  --foreground: #e5e7eb;
+/* ===== BASE RESET ===== */
+* {
+  box-sizing: border-box;
 }
 
-/* ===============================
-   GLOBAL BODY STYLES
-================================ */
-
-body {
-  background-color: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-}
-
-
-input{}
-/* ===============================
-   REUSABLE FORM STYLES
-   (Tailwind v4 way)
-================================ */
-
-@layer components {
-  .input {
-    @apply w-full rounded px-3 py-2 bg-gray-50 text-gray-800 border border-gray-700 focus:border-emerald-500 focus:outline-none;
+/* ===== BACKGROUND & ANIMATIONS ===== */
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
   }
 
-  .textarea {
-    @apply w-full rounded px-3 py-2 bg-gray-50 text-gray-800 border border-gray-700 focus:border-emerald-500 focus:outline-none min-h-[90px];
+  50% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%;
   }
 }
 
-.mapbox-gl-draw {
-  display: none !important;
+@keyframes float {
+
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+    opacity: 0.3;
+  }
+
+  50% {
+    transform: translateY(-100px) rotate(180deg);
+    opacity: 0.6;
+  }
+}
+
+@keyframes mapPulse {
+
+  0%,
+  100% {
+    opacity: 0.04;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.08;
+    transform: scale(1.02);
+  }
+}
+
+@keyframes nodeGlow {
+  from {
+    box-shadow: 0 0 15px rgba(75, 107, 60, 0.6);
+  }
+
+  to {
+    box-shadow: 0 0 25px rgba(75, 107, 60, 1);
+  }
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    opacity: .8;
+  }
+
+  100% {
+    transform: scale(3);
+    opacity: 0;
+  }
+}
+@keyframes activitySlide {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes connectionPulse {
+
+  0%,
+  100% {
+    opacity: 0.2;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes moveData {
+  0% {
+    left: 20%;
+    top: 45%;
+    opacity: 0;
+    transform: scale(0);
+  }
+
+  20% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  80% {
+    opacity: 1;
+  }
+
+  100% {
+    left: 75%;
+    top: 60%;
+    opacity: 0;
+    transform: scale(0);
+  }
+}
+
+@keyframes logoFloat {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes backgroundMove {
+  0% {
+    transform: translate(0, 0);
+  }
+
+  100% {
+    transform: translate(50px, 50px);
+  }
+}
+
+@keyframes lockPulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ===== UTILITIES ===== */
+.animate-gradientShift {
+  background-size: 400% 400%;
+  animation: gradientShift 15s ease infinite;
+}
+
+.animate-float {
+  animation: float 20s infinite;
+}
+
+.animate-mapPulse {
+  animation: mapPulse 4s ease-in-out infinite;
+}
+
+.animate-nodeGlow {
+  animation: nodeGlow 2s ease-in-out infinite alternate;
+}
+
+.animate-pulse-ring::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 2px solid #4B6B3C;
+  animation: pulse 2.5s infinite;
+}
+
+.animate-connection {
+  animation: connectionPulse 3s ease-in-out infinite;
+}
+
+.animate-data {
+  animation: moveData 3s linear infinite;
+}
+
+.animate-logo {
+  animation: logoFloat 3s ease-in-out infinite;
+}
+
+.animate-bgMove {
+  animation: backgroundMove 20s linear infinite;
+}
+
+.animate-lock {
+  animation: lockPulse 2s infinite;
+}
+
+.animate-spin-fast {
+  animation: spin 1s linear infinite;
+}
+
+/* PDF SAFE COLORS */
+.pdf-safe *,
+.pdf-safe {
+  color: rgb(0, 0, 0) !important;
+  background-color: rgb(255, 255, 255) !important;
+  border-color: rgb(209, 213, 219) !important;
+  /* gray-300 */
 }
