@@ -1,13 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import ActivityItem from "@/components/ActivityItem";
 import Marker from "@/components/Marker";
 import { Menu, X } from "lucide-react";
 import { BASE_URL } from "@/api";
 import QuickActions from "@/components/admin/action";
+import { Socket } from "socket.io-client";
 
+import { useRouter, usePathname } from "next/navigation";
+
+
+
+type ChatProps = {
+  user: { id: string; token: string; username: string };
+  socket: Socket;
+  setUser: (user: any) => void;
+};
 import {
+  MessageCircle,
   Home,
   MapPin,
   Folder,
@@ -75,14 +86,17 @@ const stats = [
     badgeColor: "text-[#16a34a]",
   },
 ];
+
 const menuItems = [
-  { name: "Overview", icon: Home, active: true },
-  { name: "Geo Monitoring", icon: MapPin },
-  { name: "File Control", icon: Folder },
-  { name: "User Control", icon: Users },
-  { name: "Analytics", icon: BarChart2 },
-  { name: "Settings", icon: Settings },
+  { name: "Overview", icon: Home, route: "/dashboard" },
+  { name: "Geo Monitoring", icon: MapPin, route: "/on-map" },
+  { name: "Files", icon: Folder, route: "/files" },
+  { name: "Users", icon: Users, route: "/admin/users" },
+  // { name: "Analytics", icon: BarChart2, route: "/analytics" },
+  { name: "Chat", icon: MessageCircle, route: "/chat" }, 
+  { name: "Settings", icon: Settings, route: "/settings" },
 ];
+
 const actions = [
   {
     title: "Add User",
@@ -166,13 +180,54 @@ function useCountUp(target: number, duration = 1200) {
   return count;
 }
 
-export default function Admin({ user }: { user: any }) {
+const  Admin:React.FC<ChatProps>=({ user, socket, setUser })=> {
   const [activeMenu, setActiveMenu] = useState("Overview");
   const [isOpen, setIsOpen] = useState(true); // desktop expanded/collapsed
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [friends, setFriends] = useState<any[]>([]);
   const [friendUsername, setFriendUsername] = useState<string>("");
+const handleLogout = async () => {
+  try {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+
+    const res = await fetch(`${BASE_URL}/api/logout`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error("Logout failed");
+    }
+
+    // ✅ cleanup after backend confirms logout
+    localStorage.removeItem("token");
+
+    if (socket?.connected) {
+      socket.disconnect();
+    }
+
   
+  } catch (error) {
+    console.error("Logout error:", error);
+    localStorage.removeItem("token");
+    if (socket?.connected) socket.disconnect();
+  
+  }
+};
+
+  const router = useRouter();
+  const pathname = usePathname(); // for active menu (recommended)
+
+  const handleMenuClick = (item:any) => {
+    router.push(item.route);
+  }
+  
+
+    
   const addFriend=async() => {
     if (!friendUsername.trim()) return alert("Enter friend's username");
     try {
@@ -283,27 +338,26 @@ export default function Admin({ user }: { user: any }) {
             {/* Menu */}
             <nav className="space-y-2">
               {menuItems.map((item) => {
-                const isActive = activeMenu === item.name;
+                const isActive = pathname === item.route;
+
                 return (
                   <div
                     key={item.name}
-                    onClick={() => {
-                      setActiveMenu(item.name);
-                      setIsMobileOpen(false); // close mobile sidebar on click
-                    }}
+                    onClick={() => handleMenuClick(item)}
                     className={`flex items-center gap-3 px-2 py-3 rounded-lg cursor-pointer
-                    border-l-4 transition-colors duration-300 ease-in-out
-                    ${
-                      isActive
-                        ? "bg-[#0b1f3c] border-emerald-400"
-                        : "border-transparent hover:bg-[#081a34] hover:border-emerald-400"
-                    }`}
+            border-l-4 transition-colors duration-300 ease-in-out
+            ${
+              isActive
+                ? "bg-[#0b1f3c] border-emerald-400"
+                : "border-transparent hover:bg-[#081a34] hover:border-emerald-400"
+            }`}
                   >
                     <item.icon
                       className={`h-5 w-5 transition-colors duration-300 ${
                         isActive ? "text-emerald-400" : "text-gray-400"
                       }`}
                     />
+
                     {isOpen && (
                       <span
                         className={`text-sm font-medium transition-colors duration-300 ${
@@ -416,6 +470,7 @@ export default function Admin({ user }: { user: any }) {
               </div>
 
               <button
+                onClick={() => handleLogout()}
                 className="group flex items-center gap-2 bg-[#ef4444] text-white
   px-5 py-2 rounded-full text-sm font-semibold
   transition-all duration-300 ease-out
@@ -679,3 +734,5 @@ export default function Admin({ user }: { user: any }) {
     </>
   );
 }
+
+export default Admin;

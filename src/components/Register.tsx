@@ -9,28 +9,42 @@ export default function Register({ setUser }: any) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setLoading(true);
+  setError("");
 
-  const handleSubmit = async (e: any) => {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
-    try {
-      
-      const res = await fetch(`${BASE_URL}/api/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
-      });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-    
-      setTimeout(() => {
-         setUser(" User register successful!");
-      }, 2000);
-    } catch (err: any) {
-      setError(err.message);
+  try {
+    const token = localStorage.getItem("token"); // admin token
+
+    const res = await fetch(`${BASE_URL}/api/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`, // ✅ token added
+      },
+      body: JSON.stringify({
+        username,
+        password,
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || "API failed");
     }
-  };
+
+    const data = await res.json();
+    console.log("REGISTER RESPONSE:", data);
+
+    setUser("User registered successfully!");
+  } catch (err: any) {
+    console.error("REGISTER ERROR:", err);
+    setError(err.message || "Something went wrong");
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className=" w-full flex items-center justify-center overflow-hidden">
@@ -47,7 +61,7 @@ export default function Register({ setUser }: any) {
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             className=" text-[10px] w-full mb-1 p-4 h-[10px] flex items-center justify-center gap-2 
-            bg-[#4B6B3C]/5 border border-[#4B6B3C]/10 rounded-lg] rounded-lg"
+            bg-[#4B6B3C]/5 border border-[#4B6B3C]/10 rounded-lg] rounded-lg text-black"
             placeholder="Enter Username"
             required
           />
@@ -56,7 +70,7 @@ export default function Register({ setUser }: any) {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="text-[10px] w-full mb-5 p-4 h-[10px] flex items-center justify-center gap-2 
+            className="text-black text-[10px] w-full mb-5 p-4 h-[10px] flex items-center justify-center gap-2 
             bg-[#4B6B3C]/5 border border-[#4B6B3C]/10 rounded-lg] rounded-lg"
             placeholder="Enter Password"
             required
