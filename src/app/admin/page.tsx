@@ -1,19 +1,25 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import ActivityItem from "@/components/ActivityItem";
 import Marker from "@/components/Marker";
 import { Menu, X } from "lucide-react";
 import { BASE_URL } from "@/api";
 import QuickActions from "@/components/admin/action";
 import { Socket } from "socket.io-client";
-
+import MapboxMap from "../offline-map/page";
+import UsersPage from "../admin/users/page";
+import Chat from "@/components/Chat";
 import { useRouter, usePathname } from "next/navigation";
 
-
-
 type ChatProps = {
-  user: { id: string; token: string; username: string };
+  user: {
+    id: string;
+    token: string;
+    username: string;
+    status: string;
+    role: string;
+  };
   socket: Socket;
   setUser: (user: any) => void;
 };
@@ -43,6 +49,7 @@ import {
   UserCheck,
   List,
 } from "lucide-react";
+import { socket } from "../socketContext";
 const stats = [
   {
     title: "TOTAL USERS",
@@ -88,13 +95,11 @@ const stats = [
 ];
 
 const menuItems = [
-  { name: "Overview", icon: Home, route: "/dashboard" },
-  { name: "Geo Monitoring", icon: MapPin, route: "/on-map" },
-  { name: "Files", icon: Folder, route: "/files" },
-  { name: "Users", icon: Users, route: "/admin/users" },
-  // { name: "Analytics", icon: BarChart2, route: "/analytics" },
-  { name: "Chat", icon: MessageCircle, route: "/chat" }, 
-  { name: "Settings", icon: Settings, route: "/settings" },
+  { name: "Geo Map", icon: MapPin, key: "map" },
+  { name: "Files", icon: Folder, key: "files" },
+  { name: "Users", icon: Users, key: "users" },
+  { name: "Chat", icon: MessageCircle, key: "chat" },
+  { name: "Settings", icon: Settings, key: "settings" },
 ];
 
 const actions = [
@@ -159,7 +164,7 @@ const activities = [
 
 function useCountUp(target: number, duration = 1200) {
   const [count, setCount] = useState(0);
-  
+
   useEffect(() => {
     let start = 0;
     const increment = target / (duration / 16);
@@ -180,61 +185,61 @@ function useCountUp(target: number, duration = 1200) {
   return count;
 }
 
-const  Admin:React.FC<ChatProps>=({ user, socket, setUser })=> {
-  const [activeMenu, setActiveMenu] = useState("Overview");
+const Admin: React.FC<ChatProps> = () => {
+  const mapContainer = useRef<HTMLDivElement | null>(null);
+  const [activeMenu, setActiveMenu] = useState("map");
+  const [user, setUser] = useState <any>(null);
   const [isOpen, setIsOpen] = useState(true); // desktop expanded/collapsed
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [friends, setFriends] = useState<any[]>([]);
   const [friendUsername, setFriendUsername] = useState<string>("");
-const handleLogout = async () => {
-  try {
-    const token = localStorage.getItem("token");
-    if (!token) return;
+  const handleLogout = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) return;
 
-    const res = await fetch(`${BASE_URL}/api/logout`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-    });
+      const res = await fetch(`${BASE_URL}/api/logout`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
 
-    if (!res.ok) {
-      throw new Error("Logout failed");
+      if (!res.ok) {
+        throw new Error("Logout failed");
+      }
+
+      // ✅ cleanup after backend confirms logout
+      localStorage.removeItem("token");
+
+      if (socket?.connected) {
+        socket.disconnect();
+      }
+    } catch (error) {
+      console.error("Logout error:", error);
+      localStorage.removeItem("token");
+      if (socket?.connected) socket.disconnect();
     }
-
-    // ✅ cleanup after backend confirms logout
-    localStorage.removeItem("token");
-
-    if (socket?.connected) {
-      socket.disconnect();
-    }
-
-  
-  } catch (error) {
-    console.error("Logout error:", error);
-    localStorage.removeItem("token");
-    if (socket?.connected) socket.disconnect();
-  
-  }
-};
+  };
 
   const router = useRouter();
   const pathname = usePathname(); // for active menu (recommended)
 
-  const handleMenuClick = (item:any) => {
-    router.push(item.route);
-  }
-  
+  const handleMenuClick = (item: any) => {
+    setActiveMenu(item.key);
 
-    
-  const addFriend=async() => {
+    // close sidebar on mobile
+    if (isMobileOpen) setIsMobileOpen(false);
+  };
+
+  const addFriend = async () => {
     if (!friendUsername.trim()) return alert("Enter friend's username");
     try {
-        if (!user?.token) {
-          alert("Unauthorized");
-          return;
-        }
+      if (!user?.token) {
+        alert("Unauthorized");
+        return;
+      }
       const res = await fetch(`${BASE_URL}/api/friends`, {
         method: "POST",
         headers: {
@@ -244,18 +249,17 @@ const handleLogout = async () => {
         body: JSON.stringify({ friendUsername }),
       });
 
-      const data =await res.json();
+      const data = await res.json();
       if (data.error) {
         alert(data.error);
       } else {
-        setFriends((prev) => [...prev, data.friend])
+        setFriends((prev) => [...prev, data.friend]);
         setFriendUsername("");
       }
     } catch (error) {
-        console.error("Add friend error:", error);
+      console.error("Add friend error:", error);
     }
-
-  }
+  };
 
   return (
     <>
@@ -338,7 +342,7 @@ const handleLogout = async () => {
             {/* Menu */}
             <nav className="space-y-2">
               {menuItems.map((item) => {
-                const isActive = pathname === item.route;
+                const isActive = activeMenu === item.key;
 
                 return (
                   <div
@@ -404,20 +408,15 @@ const handleLogout = async () => {
         {/* RIGHT CONTENT */}
         <div className="flex-1 ml-[280px] flex flex-col">
           {/* HEADER */}
-          <header className="sticky top-0 z-40 mx-6 mt-6 bg-white rounded-xl px-6 py-4 flex items-center justify-between shadow-sm">
-            {/* Left */}
+          {/* <header className="sticky top-0 z-40 mx-6 mt-6 bg-white rounded-xl px-6 py-4 flex items-center justify-between shadow-sm">
+        
             <div>
               <h1 className="text-2xl font-bold text-[#0f172a]">
-                Command <span className="text-[#4b6f44]">Center</span>
+                Live Geo <span className="text-[#4b6f44]">Map</span>
               </h1>
-              <p className="text-sm text-gray-400 mt-1">
-                Home <span className="mx-1">›</span> Dashboard{" "}
-                <span className="mx-1">›</span>
-                <span className="text-gray-600">Overview</span>
-              </p>
             </div>
 
-            {/* Right */}
+         
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2 bg-[#f8fafc] border border-gray-200 rounded-full px-4 py-2 w-[260px]">
                 <Search className="h-4 w-4 text-gray-400" />
@@ -434,7 +433,7 @@ const handleLogout = async () => {
   hover:ring-4 hover:ring-[#4b6f44]/30
 "
               >
-                {/* Icon */}
+             
                 <Bell
                   className="h-5 w-5 text-gray-600
     transition-transform duration-300
@@ -443,7 +442,7 @@ const handleLogout = async () => {
     group-hover:animate-[pulse_1.2s_ease-in-out_infinite]"
                 />
 
-                {/* Notification Count */}
+             
                 <span
                   className="absolute -top-1 -right-1 h-5 w-5 text-xs bg-red-500 text-white
     rounded-full flex items-center justify-center
@@ -451,22 +450,6 @@ const handleLogout = async () => {
                 >
                   3
                 </span>
-              </div>
-
-              <div
-                className="group bg-[#f8fafc] p-3 rounded-full border border-gray-200
-  transition-all duration-300 ease-out
-  hover:bg-[#4b6f44]
-  hover:ring-4 hover:ring-[#4b6f44]/30
-"
-              >
-                <Mail
-                  className="h-5 w-5 text-gray-600
-    transition-transform duration-300
-    group-hover:text-white
-    group-hover:scale-125
-    group-hover:animate-[pulse_1.2s_ease-in-out_infinite]"
-                />
               </div>
 
               <button
@@ -489,178 +472,46 @@ const handleLogout = async () => {
                 Logout
               </button>
             </div>
-          </header>
+          </header> */}
 
           {/* PAGE CONTENT */}
           <main className="p-6 space-y-6">
-            {/* TOTAL DATA SECTION — NOW CORRECT */}
-            <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
-              {stats.map((item) => {
-                const animatedValue = useCountUp(Number(item.value));
-
-                return (
-                  <div
-                    key={item.title}
-                    className="group relative bg-white rounded-2xl p-6 shadow-sm
-        border border-gray-100 overflow-hidden
-        transition-all duration-300 ease-out
-        hover:scale-[1.03] hover:shadow-lg"
-                  >
-                    {/* Animated Top Border */}
-                    <span
-                      className="absolute top-0 left-0 h-[3px] w-0
-  bg-gradient-to-r from-[#2ecc71] to-[#4b6f44]
-  transition-all duration-500 ease-out
-  group-hover:w-full"
-                    />
-
-                    {/* Top Row */}
-                    <div className="flex items-center justify-between mb-6">
-                      <div
-                        className={`p-3 rounded-xl ${item.iconBg}
-            transition-transform duration-300
-            group-hover:scale-110`}
-                      >
-                        <item.icon className={`h-6 w-6 ${item.iconColor}`} />
-                      </div>
-
-                      <span
-                        className={`text-xs font-semibold px-3 py-1 rounded-full
-            ${item.badgeBg} ${item.badgeColor}`}
-                      >
-                        {item.badge.startsWith("-")
-                          ? "↓ "
-                          : item.badge.startsWith("+")
-                            ? "↑ "
-                            : "✓ "}
-                        {item.badge}
-                      </span>
-                    </div>
-
-                    <p className="text-xs font-semibold tracking-wider text-gray-400">
-                      {item.title}
-                    </p>
-
-                    {/* Animated Count */}
-                    <h2 className="text-3xl font-bold text-[#0f172a] mt-2">
-                      {animatedValue.toLocaleString()}
-                    </h2>
-                  </div>
-                );
-              })}
-            </section>
-
-            <section className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-              {/* LEFT – LIVE GEO MONITORING */}
-              <div className="xl:col-span-2 bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-                {/* Header */}
-                <div className="flex items-center gap-2 mb-4">
-                  <MapPin className="h-5 w-5 text-[#4b6f44]" />
-                  <h2 className="text-lg font-semibold text-[#0f172a]">
-                    Live Geo Monitoring
-                  </h2>
-                </div>
-
-                {/* Tabs */}
-                <div className="flex gap-3 mb-4">
-                  <button className="px-4 py-1.5 text-xs rounded-md bg-[#4b6f44] text-white font-semibold">
-                    Live
-                  </button>
-                  <button className="px-4 py-1.5 text-xs rounded-md border border-gray-200 text-gray-500 hover:bg-[#4b6f44] hover:text-white font-semibold">
-                    History
-                  </button>
-                  <button className="px-4 py-1.5 text-xs rounded-md border border-gray-200 text-gray-500 hover:bg-[#4b6f44] hover:text-white font-semibold">
-                    Zones
-                  </button>
-                </div>
-
-                {/* Map Placeholder */}
-                <div className="relative h-[320px] rounded-xl bg-gradient-to-b from-[#1e3a6d] to-[#17325c] overflow-hidden">
-                  {/* Grid overlay */}
-                  <div className="absolute inset-0 grid grid-cols-8 grid-rows-6 opacity-20">
-                    {[...Array(48)].map((_, i) => (
-                      <div key={i} className="border border-white/10" />
-                    ))}
-                  </div>
-
-                  {/* Markers */}
-                  <Marker top="25%" left="30%" color="bg-green-500" />
-                  <Marker top="50%" left="40%" color="bg-cyan-400" />
-                  <Marker top="60%" left="25%" color="bg-red-500" />
-                  <Marker top="40%" left="65%" color="bg-orange-400" />
-                </div>
+            {activeMenu === "map" && <MapboxMap />}
+            {activeMenu === "files" && (
+              <div className="bg-white p-6 rounded-xl shadow">
+                <h2 className="text-xl font-bold">Files</h2>
+                {/* Files component */}
               </div>
+            )}
 
-              {/* RIGHT – LIVE ACTIVITY */}
-              <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex flex-col h-[420px]">
-                {/* Header (fixed) */}
-                <div className="flex items-center justify-between mb-4 shrink-0">
-                  <div className="flex items-center gap-2">
-                    <List className="h-5 w-5 text-[#4b6f44]" />
-                    <h2 className="text-lg font-semibold text-[#0f172a]">
-                      Live Activity
-                    </h2>
+            {activeMenu === "users" && (
+              <UsersPage />
+              // <div className="bg-white p-6 rounded-xl shadow">
+              //   <h2 className="text-xl font-bold">Users</h2>
+              //   <UsersPage />
+              // </div>
+            )}
+
+            {activeMenu === "chat" && (
+              <div className="bg-white p-6 rounded-xl shadow">
+                <h2 className="text-xl font-bold">Chat</h2>
+
+                {user ? (
+                  <Chat  socket={socket}  />
+                ) : (
+                  <div className="text-gray-500">
+                    Please select or login a user to start chat
                   </div>
-
-                  <div className="flex gap-2">
-                    <button className="px-3 py-1 text-xs rounded-md bg-[#4b6f44] text-white font-semibold">
-                      All
-                    </button>
-                    <button className="px-3 py-1 text-xs rounded-md border border-gray-200 text-gray-500 hover:bg-[#4b6f44] hover:text-white font-semibold ">
-                      Alerts
-                    </button>
-                  </div>
-                </div>
-
-                {/* Scrollable Activity List */}
-                <div className="flex-1 overflow-y-auto pr-2 space-y-5 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
-                  {[
-                    {
-                      icon: <CheckCircle className="text-green-600 h-5 w-5" />,
-                      title: "Secure Connection Established",
-                      subtitle: "New device authenticated",
-                    },
-                    {
-                      icon: <CheckCircle className="text-green-600 h-5 w-5" />,
-                      title: "Secure Connection Established",
-                      subtitle: "New device authenticated",
-                    },
-                    {
-                      icon: <UserCheck className="text-green-600 h-5 w-5" />,
-                      title: "Identity Verified",
-                      subtitle: "Biometric scan approved",
-                    },
-                    {
-                      icon: <CheckCircle className="text-green-600 h-5 w-5" />,
-                      title: "Secure Connection Established",
-                      subtitle: "New device authenticated",
-                    },
-                    {
-                      icon: <CheckCircle className="text-green-600 h-5 w-5" />,
-                      title: "Secure Connection Established",
-                      subtitle: "New device authenticated",
-                    },
-                    {
-                      icon: <CheckCircle className="text-green-600 h-5 w-5" />,
-                      title: "Secure Connection Established",
-                      subtitle: "New device authenticated",
-                    },
-                  ].map((item, index) => (
-                    <ActivityItem
-                      key={index}
-                      index={index}
-                      icon={item.icon}
-                      title={item.title}
-                      subtitle={item.subtitle}
-                    />
-                  ))}
-                </div>
+                )}
               </div>
-            </section>
+            )}
 
-            <div className="p-6">
-              <QuickActions />
-            </div>
+            {activeMenu === "settings" && (
+              <div className="bg-white p-6 rounded-xl shadow">
+                <h2 className="text-xl font-bold">Settings</h2>
+                {/* Settings component */}
+              </div>
+            )}
           </main>
 
           {/* FOOTER*/}
@@ -733,6 +584,6 @@ const handleLogout = async () => {
       </div>
     </>
   );
-}
+};
 
 export default Admin;

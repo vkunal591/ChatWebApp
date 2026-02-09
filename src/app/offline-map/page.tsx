@@ -1,12 +1,30 @@
 "use client";
 
-export const dynamic = "force-dynamic";
 import { useEffect, useRef, useState } from "react";
 import maplibregl, { Map, Marker } from "maplibre-gl";
+import MapboxDraw from "@mapbox/mapbox-gl-draw";
+import { kml as kmlToGeoJSON } from "@tmcw/togeojson";
+import tokml from "tokml";
+import jsPDF from "jspdf";
+import {
+  FaMapMarkedAlt,
+  FaMapMarkerAlt,
+  FaDrawPolygon,
+  FaTrash,
+  FaStopCircle,
+  FaFilePdf,
+  FaFileExport,
+  FaShieldAlt,
+  FaFileImport
+} from "react-icons/fa";
+import { MdTimeline } from "react-icons/md";
+
+
 import Modal from "@/components/Modal";
 import LocalChatDefForm from "@/components/LocalChatDefForm";
-import "maplibre-gl/dist/maplibre-gl.css";
 
+import "maplibre-gl/dist/maplibre-gl.css";
+import "@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css";
 
 type MarkerType = {
   lat: number;
@@ -16,9 +34,9 @@ type MarkerType = {
 };
 
 export default function MapboxMap() {
-  
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
+  const drawRef = useRef<MapboxDraw | null>(null);
   const markerRefs = useRef<Marker[]>([]);
 
   const [isClient, setIsClient] = useState(false);
@@ -32,30 +50,91 @@ export default function MapboxMap() {
   const [modalOpen, setModalOpen] = useState(false);
 
   const [markers, setMarkers] = useState<MarkerType[]>([]);
-
-  const [open, setOpen] = useState<boolean>(false);
-  const [selectedMarkerType, setSelectedMarkerType] = useState("Normal");
+  const [open, setOpen] = useState(false);
+  const [selectedMarkerType, setSelectedMarkerType] = useState<
+    "Normal" | "Security"
+  >("Normal");
 
   useEffect(() => setIsClient(true), []);
-
-  // ================= PDF =================
-  const generateRoutePDF = async () => {
-   
-  };
 
   // ================= MAP INIT =================
   useEffect(() => {
     if (!isClient || mapRef.current || !mapContainer.current) return;
-  
+
     const map = new maplibregl.Map({
       container: mapContainer.current,
       style: "http://localhost:8080/styles/basic-preview/style.json",
-      center: [77.1025, 28.6139], // default Delhi
+      center: [77.1025, 28.6139],
       zoom,
-    });
+      preserveDrawingBuffer: true, // critical
+    } as any);
 
     map.addControl(new maplibregl.NavigationControl(), "top-right");
+
+    const draw = new MapboxDraw({
+      displayControlsDefault: false,
+      controls: {
+        point: true,
+        line_string: true,
+        polygon: true,
+        trash: true,
+      },
+      styles: [
+        // POLYGON FILL
+        {
+          id: "gl-draw-polygon-fill",
+          type: "fill",
+          filter: ["all", ["==", "$type", "Polygon"], ["!=", "mode", "static"]],
+          paint: {
+            "fill-color": "#00ff99",
+            "fill-opacity": 0.3,
+          },
+        },
+
+        // POLYGON OUTLINE
+        {
+          id: "gl-draw-polygon-stroke",
+          type: "line",
+          filter: ["all", ["==", "$type", "Polygon"], ["!=", "mode", "static"]],
+          paint: {
+            "line-color": "#00ff99",
+            "line-width": 2,
+          },
+        },
+
+        // LINE STRING
+        {
+          id: "gl-draw-line",
+          type: "line",
+          filter: [
+            "all",
+            ["==", "$type", "LineString"],
+            ["!=", "mode", "static"],
+          ],
+          paint: {
+            "line-color": "#ffcc00",
+            "line-width": 2,
+            "line-dasharray": ["literal", [2, 2]], // ✅ FIX
+          },
+        },
+
+        // POINT
+        {
+          id: "gl-draw-point",
+          type: "circle",
+          filter: ["all", ["==", "$type", "Point"], ["!=", "mode", "static"]],
+          paint: {
+            "circle-radius": 6,
+            "circle-color": "#ff4444",
+          },
+        },
+      ],
+    });
+
+    map.addControl(draw as any); // UI hidden via CSS
+
     mapRef.current = map;
+    drawRef.current = draw;
 
     return () => {
       map.remove();
@@ -71,83 +150,45 @@ export default function MapboxMap() {
     markerRefs.current.forEach((m) => m.remove());
     markerRefs.current = [];
 
-    // markers.forEach((m, index) => {
-    //   const el = document.createElement("div");
-    //   el.innerText = m.type === "Security" ? "🛡️" : "📍";
-    //   el.style.fontSize = "28px";
+    markers.forEach((m, index) => {
+      const el = document.createElement("div");
+      el.innerText = m.type === "Security" ? "🛡️" : "📍";
+      el.style.fontSize = "28px";
 
-    //   const marker = new maplibregl.Marker({
-    //     element: el,
-    //     draggable: true,
-    //   })
-    //     .setLngLat([m.lng, m.lat])
-    //     .setPopup(
-    //       new maplibregl.Popup().setHTML(
-    //         `<strong>${m.info}</strong><br/>Lat: ${m.lat}<br/>Lng: ${m.lng}`,
-    //       ),
-    //     )
-    //     .addTo(map);
+      const marker = new maplibregl.Marker({
+        element: el,
+        draggable: true,
+      })
+        .setLngLat([m.lng, m.lat])
+        .setPopup(
+          new maplibregl.Popup().setHTML(
+            `<strong>${m.info}</strong><br/>Lat: ${m.lat}<br/>Lng: ${m.lng}`,
+          ),
+        )
+        .addTo(map);
 
-    //   marker.on("dragend", () => {
-    //     const p = marker.getLngLat();
-    //     setMarkers((prev) =>
-    //       prev.map((x, i) =>
-    //         i === index ? { ...x, lat: p.lat, lng: p.lng } : x,
-    //       ),
-    //     );
-    //   });
+      marker.on("dragend", () => {
+        const p = marker.getLngLat();
+        setMarkers((prev) =>
+          prev.map((x, i) =>
+            i === index ? { ...x, lat: p.lat, lng: p.lng } : x,
+          ),
+        );
+      });
 
-    //   markerRefs.current.push(marker);
-    // });
+      markerRefs.current.push(marker);
+    });
   }, [markers]);
 
-  // ================= ROUTE =================
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || markers.length < 2) return;
+  // ================= DRAW CONTROLS =================
+  const drawPoint = () => drawRef.current?.changeMode("draw_point");
+  const drawLine = () => drawRef.current?.changeMode("draw_line_string");
+  const drawPolygon = () => drawRef.current?.changeMode("draw_polygon");
+  const stopDrawing = () => drawRef.current?.changeMode("simple_select");
 
-    const drawRoute = async () => {
-      const geometry = await fetchRoadRoute(markers);
-      if (!geometry) return;
+  const deleteSelected = () => drawRef.current?.trash();
 
-      const geojson: GeoJSON.Feature<GeoJSON.LineString> = {
-        type: "Feature",
-        geometry,
-        properties: {},
-      };
-
-      const source = map.getSource("route") as maplibregl.GeoJSONSource;
-
-      if (source) {
-        source.setData(geojson);
-      } else {
-        map.addSource("route", {
-          type: "geojson",
-          data: geojson,
-        });
-
-        map.addLayer({
-          id: "route",
-          type: "line",
-          source: "route",
-          paint: {
-            "line-color": "#00ff6a",
-            "line-width": 5,
-          },
-        });
-      }
-
-      setTimeout(generateRoutePDF, 800);
-    };
-
-    if (map.isStyleLoaded()) {
-      drawRoute();
-    } else {
-      map.once("load", drawRoute);
-    }
-  }, [markers]);
-
-  // ================= HANDLERS =================
+  // ================= MARKER HANDLERS =================
   const handleAddMarker = () => {
     if (!lat || !lng) return;
 
@@ -157,46 +198,15 @@ export default function MapboxMap() {
         lat: Number(lat),
         lng: Number(lng),
         info: "Manual Marker",
-        type: "Normal",
+        type: selectedMarkerType,
       },
     ]);
-  };
-
-  const geocodeCity = async (city: string) => {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&q=${city}`,
-    );
-    const data = await res.json();
-
-    if (!data.length) throw new Error("City not found");
-
-    return {
-      lat: Number(data[0].lat),
-      lng: Number(data[0].lon),
-    };
-  };
-  const fetchRoadRoute = async (points: MarkerType[]) => {
-    if (points.length < 2) return null;
-
-    const coords = points.map((p) => `${p.lng},${p.lat}`).join(";");
-
-    const res = await fetch(
-      `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`,
-    );
-
-    const data = await res.json();
-    return data.routes[0].geometry;
   };
 
   const setManualLocation = () => {
     const latitude = parseFloat(modalLat);
     const longitude = parseFloat(modalLng);
-
     if (isNaN(latitude) || isNaN(longitude)) return;
-
-    // ✅ keep input states string
-    setLat(modalLat);
-    setLng(modalLng);
 
     setMarkers((prev) => [
       ...prev,
@@ -204,122 +214,321 @@ export default function MapboxMap() {
         lat: latitude,
         lng: longitude,
         info: "Manual Location",
-        type: selectedMarkerType as "Normal" | "Security",
+        type: selectedMarkerType,
       },
     ]);
 
     setModalOpen(false);
   };
 
-  // ================= UI (UNCHANGED) =================
+  // ================= MAP ACTIONS =================
+  const resetMap = () => {
+    drawRef.current?.deleteAll();
+    markerRefs.current.forEach((m) => m.remove());
+    markerRefs.current = [];
+    setMarkers([]);
+  };
+
+  // ================= KML EXPORT =================
+  const exportKML = () => {
+    if (!drawRef.current) return;
+
+    const drawData = drawRef.current.getAll();
+
+    const markerFeatures = markers.map((m) => ({
+      type: "Feature",
+      geometry: {
+        type: "Point",
+        coordinates: [m.lng, m.lat],
+      },
+      properties: {
+        name: m.info,
+        type: m.type,
+      },
+    }));
+
+    const geojson = {
+      type: "FeatureCollection",
+      features: [...drawData.features, ...markerFeatures],
+    };
+
+    const kml = tokml(geojson as any);
+    const blob = new Blob([kml], {
+      type: "application/vnd.google-earth.kml+xml",
+    });
+
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "defence-map.kml";
+    a.click();
+  };
+
+  // ================= KML IMPORT =================
+  const importKML = async (file: File) => {
+    if (!drawRef.current) return;
+
+    const text = await file.text();
+    const xml = new DOMParser().parseFromString(text, "application/xml");
+    const geojson = kmlToGeoJSON(xml) as GeoJSON.FeatureCollection;
+
+    drawRef.current.add({
+      type: "FeatureCollection",
+      features: geojson.features.map((f, i) => ({
+        ...f,
+        id: f.id ?? `kml-${i}`,
+      })),
+    });
+  };
+
+  // ------------------ REVERSE GEOCODING ------------------
+  async function getPlaceName(lat: number, lng: number) {
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+      );
+      const data = await res.json();
+      return data.display_name || "Unknown location";
+    } catch (err) {
+      console.error("Failed to fetch place name", err);
+      return "Unknown location";
+    }
+  }
+
+  // ------------------ EXPORT PDF ------------------
+  const exportPDF = async () => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const prevCenter = map.getCenter();
+    const prevZoom = map.getZoom();
+    // wait until map fully renders
+    await new Promise<void>((resolve) => {
+      if (map.loaded()) resolve();
+      else map.once("idle", () => resolve());
+    });
+
+    const mapCanvas = map.getCanvas();
+    const width = mapCanvas.width;
+    const height = mapCanvas.height;
+
+    // Create a new canvas for final rendering
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // ------------------ 1️⃣ Draw map background ------------------
+
+    map.triggerRepaint();
+
+    await new Promise((r) => requestAnimationFrame(r));
+
+    ctx.drawImage(mapCanvas, 0, 0);
+
+    // ------------------ 2️⃣ Project function ------------------
+    const project = ([lng, lat]: [number, number]) => {
+      const p = map.project([lng, lat]);
+      return [p.x, p.y];
+    };
+
+    const bounds = new maplibregl.LngLatBounds();
+
+    const drawData = drawRef.current?.getAll();
+    drawData?.features.forEach((f: any) => {
+      if (f.geometry.type === "Point") {
+        bounds.extend(f.geometry.coordinates);
+      }
+      if (f.geometry.type === "LineString") {
+        f.geometry.coordinates.forEach((c: any) => bounds.extend(c));
+      }
+      if (f.geometry.type === "Polygon") {
+        f.geometry.coordinates.flat().forEach((c: any) => bounds.extend(c));
+      }
+    });
+
+    markers.forEach((m) => bounds.extend([m.lng, m.lat]));
+
+    const placeNames = await Promise.all(
+      markers.map((m) => getPlaceName(m.lat, m.lng)),
+    );
+
+    markers.forEach((m, index) => {
+      const [x, y] = project([m.lng, m.lat]);
+      const placeName = placeNames[index];
+
+      ctx.fillStyle = m.type === "Security" ? "#1E90FF" : "#FF4500";
+      ctx.beginPath();
+      ctx.arc(x, y, 8, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Draw text label
+      ctx.font = "14px Arial";
+      ctx.fillStyle = "#ffffff";
+      ctx.strokeStyle = "#000000";
+      ctx.lineWidth = 3;
+      ctx.strokeText(placeName, x + 10, y - 10);
+      ctx.fillText(placeName, x + 10, y - 10);
+    });
+
+    map.fitBounds(bounds, {
+      padding: 80,
+      animate: false,
+    });
+    map.triggerRepaint();
+    await new Promise((r) => requestAnimationFrame(r));
+
+    ctx.drawImage(map.getCanvas(), 0, 0);
+    // ------------------ 7️⃣ Export as PDF ------------------
+    // IMPORTANT: Use your **final canvas** here
+    const imgData = canvas.toDataURL("image/png");
+
+    const pdf = new jsPDF({
+      orientation: width > height ? "landscape" : "portrait",
+      unit: "px",
+      format: [width, height],
+    });
+
+    pdf.addImage(imgData, "PNG", 0, 0, width, height);
+    pdf.save("defence-map.pdf");
+    map.setCenter(prevCenter);
+    map.setZoom(prevZoom);
+  };
+
+  // ================= UI =================
   return (
-   <div className="flex h-screen  bg-[#05160fee] text-[#e5e7eb] font-sans">
-      {/* LEFT PANEL */}
-      <div className="w-1/4 p-6 bg-[#07522c] border-r border-emerald-500/30 space-y-8 shadow-[0_0_30px_rgba(16,185,129,0.15)]">
-        {/* PANEL HEADER */}
-        <div className="text-center">
-          <h1 className="text-xl font-bold tracking-widest text-emerald-400">
-            DEFENCE CONTROL
-          </h1>
-          <p className="text-xs text-gray-100 mt-1">Tactical Map Operations</p>
-        </div>
+    <div className="flex h-screen bg-[#05160fee] text-[#e5e7eb] relative">
+    
 
-        {/* ===== ADD MARKER SECTION ===== */}
-        <div className="space-y-4 bg-[#020617]/80 border border-emerald-500/20 rounded-lg p-4">
-          <h2 className="text-sm font-semibold tracking-wider text-emerald-400">
-            ADD MARKER
-          </h2>
+      <div className="fixed top-8 left-76 z-50 flex flex-col gap-3">
+        {/* Defence Form */}
+        <button
+          onClick={() => setOpen(true)}
+          title="Defence Form"
+          className="p-3 rounded-full bg-emerald-600 text-white hover:scale-110 transition shadow-lg"
+        >
+          <FaShieldAlt size={18} />
+        </button>
+        <Modal open={open} onClose={() => setOpen(false)}>
+          <LocalChatDefForm />
+        </Modal>
+        {/* Select Location */}
+        <button
+          onClick={() => setModalOpen(true)}
+          title="Select Location"
+          className="p-3 rounded-full bg-indigo-600 text-white hover:scale-110 transition shadow-lg"
+        >
+          <FaMapMarkerAlt size={18} />
+        </button>
 
-          <button
-            onClick={() => setOpen(true)}
-            className="w-full px-3 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 transition rounded text-sm font-semibold tracking-wide shadow-md cursor-pointer"
-          >
-            Defence Form
-          </button>
-
-          <Modal open={open} onClose={() => setOpen(false)}>
-            <LocalChatDefForm />
-          </Modal>
-
-          <button
-            onClick={() => setModalOpen(true)}
-            className="w-full px-3 py-2 bg-indigo-600 hover:bg-indigo-700 active:scale-95 transition rounded text-sm font-semibold tracking-wide shadow-md cursor-pointer"
-          >
-            Select Location
-          </button>
-
+        {/* Import KML */}
+        <label
+          title="Import KML"
+          className="p-3 rounded-full bg-purple-600 text-white hover:scale-110 transition shadow-lg cursor-pointer"
+        >
+          <FaFileImport size={18} />
           <input
-            placeholder="Latitude"
-            value={lat}
-            onChange={(e) => setLat(e.target.value)}
-            className="w-full p-2 rounded bg-black border border-gray-700 focus:border-emerald-500 focus:outline-none text-emerald-300 placeholder-gray-500"
+            type="file"
+            hidden
+            accept=".kml"
+            onChange={(e) => e.target.files && importKML(e.target.files[0])}
           />
-
-          <input
-            placeholder="Longitude"
-            value={lng}
-            onChange={(e) => setLng(e.target.value)}
-            className="w-full p-2 rounded bg-black border border-gray-700 focus:border-emerald-500 focus:outline-none text-emerald-300 placeholder-gray-500"
-          />
-
-          <select
-            value={selectedMarkerType}
-            onChange={(e) => setSelectedMarkerType(e.target.value)}
-            className="w-full p-2 rounded bg-black border border-gray-700 focus:border-emerald-500 focus:outline-none text-emerald-300 cursor-pointer"
-          >
-            <option value="normal">Normal</option>
-            <option value="security">Security</option>
-          </select>
-
-          <button
-            onClick={handleAddMarker}
-            className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 transition rounded text-sm font-semibold tracking-wide shadow-md cursor-pointer"
-          >
-            Add Marker
-          </button>
-        </div>
+        </label>
       </div>
-
       {/* MAP */}
-      <div
-        id="map"
-        ref={mapContainer}
-        className="w-3/4 h-full border-l border-emerald-500/30"
-      />
+      <div ref={mapContainer} className="w-full h-full" />
 
-      {/* ===== SELECT LOCATION MODAL ===== */}
+      <div className="fixed bottom-4 right-4 z-50 flex flex-wrap gap-2 bg-[#020617]/90 border border-emerald-500/30 px-4 py-2 rounded-lg backdrop-blur-md shadow-lg">
+        <button
+          onClick={resetMap}
+          title="New Map"
+          className="p-2 bg-red-600 rounded text-white hover:scale-110 transition"
+        >
+          <FaMapMarkedAlt size={18} />
+        </button>
+
+        <button
+          onClick={drawPoint}
+          title="Placemark"
+          className="p-2 bg-emerald-600 rounded text-white hover:scale-110 transition"
+        >
+          <FaMapMarkerAlt size={18} />
+        </button>
+
+        <button
+          onClick={drawLine}
+          title="Path"
+          className="p-2 bg-sky-600 rounded text-white hover:scale-110 transition"
+        >
+          <MdTimeline size={18} />
+        </button>
+
+        <button
+          onClick={drawPolygon}
+          title="Polygon"
+          className="p-2 bg-orange-600 rounded text-white hover:scale-110 transition"
+        >
+          <FaDrawPolygon size={18} />
+        </button>
+
+        <button
+          onClick={deleteSelected}
+          title="Delete"
+          className="p-2 bg-yellow-600 rounded text-white hover:scale-110 transition"
+        >
+          <FaTrash size={18} />
+        </button>
+
+        <button
+          onClick={stopDrawing}
+          title="Stop"
+          className="p-2 bg-gray-600 rounded text-white hover:scale-110 transition"
+        >
+          <FaStopCircle size={18} />
+        </button>
+
+        <button
+          onClick={exportKML}
+          title="Export KML"
+          className="p-2 bg-blue-600 rounded text-white hover:scale-110 transition"
+        >
+          <FaFileExport size={18} />
+        </button>
+
+        <button
+          onClick={exportPDF}
+          title="Export PDF"
+          className="p-2 bg-purple-600 rounded text-white hover:scale-110 transition"
+        >
+          <FaFilePdf size={18} />
+        </button>
+      </div>
+      {/* COORD MODAL */}
       {modalOpen && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/70 backdrop-blur-sm z-50">
-          <div className="bg-[#020617] border border-emerald-500/30 p-6 rounded-lg w-80 space-y-4 shadow-[0_0_40px_rgba(16,185,129,0.25)]">
-            <h3 className="text-sm font-semibold tracking-widest text-emerald-400">
-              SET COORDINATES
-            </h3>
-
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center">
+          <div className="bg-[#020617] p-6 rounded space-y-3">
             <input
               placeholder="Latitude"
               value={modalLat}
               onChange={(e) => setModalLat(e.target.value)}
-              className="w-full p-2 rounded bg-black border border-gray-700 focus:border-emerald-500 focus:outline-none text-emerald-300"
+              className="w-full p-2 bg-black border rounded"
             />
-
             <input
               placeholder="Longitude"
               value={modalLng}
               onChange={(e) => setModalLng(e.target.value)}
-              className="w-full p-2 rounded bg-black border border-gray-700 focus:border-emerald-500 focus:outline-none text-emerald-300"
+              className="w-full p-2 bg-black border rounded"
             />
-
-            <div className="flex gap-3">
+            <div className="flex gap-2">
               <button
                 onClick={setManualLocation}
-                className="flex-1 bg-green-600 hover:bg-green-700 active:scale-95 transition p-2 rounded font-semibold cursor-pointer"
+                className="flex-1 bg-green-600 rounded"
               >
                 Set
               </button>
-
               <button
                 onClick={() => setModalOpen(false)}
-                className="flex-1 bg-red-600 hover:bg-red-700 active:scale-95 transition p-2 rounded font-semibold cursor-pointer"
+                className="flex-1 bg-red-600 rounded"
               >
                 Cancel
               </button>

@@ -1,7 +1,7 @@
 "use client";
 
-import {jwtDecode} from "jwt-decode"
 import { useEffect, useState, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { BASE_URL } from "@/api";
 import CallModal from "./modal/CallModal";
 import {
@@ -9,8 +9,13 @@ import {
   Fingerprint,
   Send,
   Lock,
+  Phone,
+  Video
 } from "lucide-react";
 import { Socket } from "socket.io-client";
+
+import { jwtDecode } from "jwt-decode";
+import Admin from "@/app/admin/page";
 
 
 
@@ -23,16 +28,19 @@ import {
   FiSearch,
 } from "react-icons/fi";
 
+// type ChatProps = {
+//   user: {
+//     id: string;
+//     token: string;
+//     username: string;
+//     status: string;
+//     role: string;
+//   };
+//   socket: Socket;
+//   setUser: (user: any) => void;
+// };
 type ChatProps = {
-  user: {
-    id: string;
-    token: string;
-    username: string;
-    status: string;
-    role: string;
-  };
   socket: Socket;
-  setUser: (user: any) => void;
 };
 interface ChatUser {
   id: string;
@@ -42,8 +50,13 @@ interface ChatUser {
   status?: string;
   isBlocked?: boolean;
 }
-
-const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
+type JwtPayload = {
+  id: string;
+  role: string;
+  iat: number;
+  exp: number;
+};
+const Chat: React.FC<ChatProps> = ({ socket}) => {
   const [friends, setFriends] = useState<any[]>([]);
   const [friendUsername, setFriendUsername] = useState<string>("");
   const [selectedFriend, setSelectedFriend] = useState<any>(null);
@@ -64,21 +77,68 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
   const beepRef = useRef<HTMLAudioElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [search, setSearch] = useState("");
+  const [user, setUser] = useState<any>(null);
+  
+  const router = useRouter();
 
+  useEffect(() => {
+    if (!user) return;
+
+    if (user.role === "admin") {
+      router.replace("/admin"); // 👈 admin panel route
+    }
+  }, [user, router]);
+
+useEffect(() => {
+  if (typeof window === "undefined") return;
 
   const token = localStorage.getItem("token");
+  if (!token) return;
 
-  let isAdmin = false;
+  try {
+    const cleanToken = token.startsWith("Bearer ")
+      ? token.split(" ")[1]
+      : token;
 
-  if (token) {
-    try {
-      const decoded = jwtDecode(token);
-      console.log("Decoded role:", decoded.role);
-      isAdmin = decoded.role === "admin";
-    } catch (err) {
-      console.error("Invalid token", err);
-    }
+    const decoded: any = jwtDecode(cleanToken);
+
+    setUser({
+      id: decoded.id,
+      role: decoded.role,
+      token: cleanToken,
+      username: decoded.username || "User",
+    });
+  } catch (err) {
+    console.error("Invalid token", err);
   }
+}, []);
+
+
+const [isAdmin, setIsAdmin] = useState(false);
+  const receiverId = selectedFriend?._id || selectedFriend?.id;
+  
+  useEffect(() => {
+    // extra safety for Next.js
+    if (typeof window === "undefined") return;
+
+    try {
+      const rawToken = localStorage.getItem("token");
+
+      if (!rawToken) return;
+
+      const token = rawToken.startsWith("Bearer ")
+        ? rawToken.split(" ")[1]
+        : rawToken;
+
+      const decoded = jwtDecode<JwtPayload>(token);
+
+      console.log("Decoded token ✅", decoded);
+
+      setIsAdmin(decoded.role === "admin");
+    } catch (err) {
+      console.error("JWT decode failed ❌", err);
+    }
+  }, []);
   
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -178,7 +238,7 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
 
       socket.emit("callUser", {
         from: user.id,
-        to: selectedFriend._id,
+        to: receiverId,
         signal: offer, // offer includes { type: "offer", sdp: "..." }
         type, // "video" or "audio"
       });
@@ -269,49 +329,58 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
     }
   };
 
-  const fetchFriends = async () => {
-    try {
-      const res = await fetch(`${BASE_URL}/api/friends`, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${user.token}`,
-        },
-      });
+ const fetchFriends = async () => {
+   if (!user?.token) return; // ✅ SAFETY
 
-      const result = await res.json();
+   try {
+     const res = await fetch(`${BASE_URL}/api/friends`, {
+       method: "GET",
+       headers: {
+         Authorization: `Bearer ${user.token}`,
+       },
+     });
 
-      console.log("friends api response:", result);
+     const result = await res.json();
 
-      const list = Array.isArray(result)
-        ? result
-        : Array.isArray(result.data)
-          ? result.data
-          : [];
+     const list = Array.isArray(result)
+       ? result
+       : Array.isArray(result.data)
+         ? result.data
+         : [];
 
-      setFriends(list);
-    } catch (error) {
-      console.error("Fetch friends error:", error);
-      setFriends([]); // safety fallback
-    }
-  };
-  useEffect(() => {
-    fetchFriends();
-  }, []);
+     setFriends(list);
+   } catch (error) {
+     console.error("Fetch friends error:", error);
+     setFriends([]);
+   }
+ };
+ useEffect(() => {
+   if (!user) return;
 
-  const fetchMessages = async (friendId: string) => {
-    try {
-      const res = await fetch(`${BASE_URL}/api/messages/${friendId}`, {
-        method: "GET",
-        headers: { Authorization: `Bearer ${user.token}` },
-      });
-      console.log("=====", res);
+   if (isAdmin) {
+     fetchAdminUsersAndFriends();
+   } else {
+     fetchFriends();
+   }
+ }, [user, isAdmin]);
 
-      const data = await res.json();
-      setMessages(data);
-    } catch (error) {
-      console.error("Fetch messages error:", error);
-    }
-  };
+ const fetchMessages = async (friendId: string) => {
+   if (!user?.token) return; // ✅ guard
+
+   try {
+     const res = await fetch(`${BASE_URL}/api/messages/${friendId}`, {
+       method: "GET",
+       headers: {
+         Authorization: `Bearer ${user.token}`,
+       },
+     });
+
+     const data = await res.json();
+     setMessages(data);
+   } catch (error) {
+     console.error("Fetch messages error:", error);
+   }
+ };
 
   useEffect(() => {
     if (!selectedFriend?._id) return;
@@ -325,7 +394,7 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
 
     const msg: any = {
       sender: user.id,
-      receiver: selectedFriend._id,
+      receiver: receiverId,
       content: message.trim(),
       type: selectedMedia ? "media" : "text",
       timestamp: new Date().toISOString(),
@@ -461,33 +530,31 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
     }
   }, [isAdmin]);
  
-  useEffect(() => {
-    const handleReceiveMessage = (msg: any) => {
-      if (!selectedFriend) return;
+ useEffect(() => {
+  if (!user || !selectedFriend) return; // ✅ guard
 
-      const isForThisChat =
-        (msg.sender === selectedFriend._id && msg.receiver === user.id) ||
-        (msg.sender === user.id && msg.receiver === selectedFriend._id);
+  const handleReceiveMessage = (msg: any) => {
+    const isForThisChat =
+      (msg.sender === selectedFriend._id && msg.receiver === user.id) ||
+      (msg.sender === user.id && msg.receiver === selectedFriend._id);
 
-      if (isForThisChat) {
-        setMessages((prev) => [...prev, msg]);
+    if (isForThisChat) {
+      setMessages((prev) => [...prev, msg]);
 
-        if (beepRef.current) {
-          beepRef.current.currentTime = 0;
-          beepRef.current.play().catch(() => {});
-        }
-      }
-    };
+      beepRef.current?.play().catch(() => {});
+    }
+  };
 
-    socket.on("receiveMessage", handleReceiveMessage);
+  socket.on("receiveMessage", handleReceiveMessage);
 
-    return () => {
-      socket.off("receiveMessage", handleReceiveMessage); // ✔ OK now, returns void
-    };
-  }, [socket, selectedFriend]);
+  return () => {
+    socket.off("receiveMessage", handleReceiveMessage);
+  };
+}, [socket, selectedFriend, user]);
 
   const handleLogout = async () => {
     try {
+     
       const token = localStorage.getItem("token");
       if (!token) return;
 
@@ -506,16 +573,14 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
       // ✅ cleanup after backend confirms logout
       localStorage.removeItem("token");
 
-      if (socket?.connected) {
-        socket.disconnect();
-      }
+      if (socket?.connected) socket.disconnect();
 
-      setUser(null);
+      window.location.href = "/login";
     } catch (error) {
       console.error("Logout error:", error);
       localStorage.removeItem("token");
       if (socket?.connected) socket.disconnect();
-      setUser(null);
+    window.location.href = "/login";
     }
   };
   const filteredFriends = friends.filter((friend) => {
@@ -523,6 +588,13 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
 
     return friend.username.toLowerCase().includes(search.trim().toLowerCase());
   });
+  if (!user) {
+    return (
+      <div className="h-screen flex items-center justify-center text-slate-600">
+        Please login to start chat
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col h-screen w-full rounded-lg bg-[#f7f8f3] shadow-lg ">
       {/* Main layout */}
@@ -697,7 +769,7 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
             <p className="px-4 py-2 text-xs font-semibold text-slate-500">
               FRIENDS
             </p>
-            {friends.map((f) => (
+            {filteredFriends.map((f) => (
               <div
                 key={f._id}
                 onClick={() => setSelectedFriend(f)}
@@ -714,30 +786,55 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
           {/* Chat Container */}
           <div className="w-full max-w-4xl bg-white shadow-xl  overflow-hidden h-full">
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b ">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center">
                   <img
                     src="/assets/logo/localchatlogo.png"
                     alt="logo"
-                    className="object-contain h-8 w-8 "
+                    className="object-contain h-8 w-8"
                   />
                 </div>
+
                 <div>
                   <h2 className="font-semibold text-slate-800">
                     {selectedFriend ? selectedFriend.username : "Select a chat"}
                   </h2>
-
                   <p className="text-xs text-slate-500">
                     FIELD OFFICER • DELHI
                   </p>
                 </div>
               </div>
 
-              <span className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-md bg-orange-100 text-orange-700 border border-orange-500">
-                <Lock size={12} className="text-orange-700" />
-                TLS 1.3
-              </span>
+              {/* RIGHT SIDE ACTIONS */}
+              <div className="flex items-center gap-3">
+                {/* AUDIO CALL */}
+                <button
+                  onClick={() => startCall("audio")}
+                  disabled={!selectedFriend}
+                  className="p-2 rounded-full hover:bg-slate-100 text-green-600 disabled:opacity-70 cursor-pointer"
+                  title="Audio Call"
+                >
+                  <Phone size={19} />
+                </button>
+
+                {/* VIDEO CALL */}
+                <button
+                  onClick={() => startCall("video")}
+                  disabled={!selectedFriend}
+                  className="p-2 rounded-full hover:bg-slate-100 text-blue-600 disabled:opacity-70 cursor-pointer"
+                  title="Video Call"
+                >
+                  <Video size={20} />
+                </button>
+
+                {/* TLS BADGE */}
+                <span className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-md bg-orange-100 text-orange-700 border border-orange-500">
+                  <Lock size={12} className="text-orange-700" />
+                  TLS 1.3
+                </span>
+              </div>
             </div>
 
             {/* Messages */}
@@ -805,7 +902,6 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
                                 href={msg.mediaUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="underline"
                               >
                                 {msg.fileName}
                               </a>
@@ -936,6 +1032,7 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
       />
     </div>
   );
+  
 };
 
 export default Chat;
