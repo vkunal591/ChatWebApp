@@ -1,26 +1,41 @@
 @import "tailwindcss";
 
+/* ===============================
+   THEME VARIABLES
+================================ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #1b583c;
+  --foreground: #e5e7eb;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* ===============================
+   GLOBAL BODY STYLES
+================================ */
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #ededed;
-    --foreground: #0a0a0a;
+
+input{}
+/* ===============================
+   REUSABLE FORM STYLES
+   (Tailwind v4 way)
+================================ */
+
+@layer components {
+  .input {
+    @apply w-full rounded px-3 py-2 bg-gray-50 text-gray-800 border border-gray-700 focus:border-emerald-500 focus:outline-none;
+  }
+
+  .textarea {
+    @apply w-full rounded px-3 py-2 bg-gray-50 text-gray-800 border border-gray-700 focus:border-emerald-500 focus:outline-none min-h-[90px];
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+.mapbox-gl-draw {
+  display: none !important;
 }

@@ -11,20 +11,22 @@ export default function Login({ setUser }: any) {
     e.preventDefault();
     setError('');
     try {
-      const res = await fetch(`${BASE_URL}/api/${isRegister ? 'register' : 'login'}`, {
+      {/*fetch(`${BASE_URL}/api/${isRegister ? 'register' : 'login'}` */}
+      const res = await fetch(`${BASE_URL}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      if (isRegister) {
+  {  /*  if (isRegister) {
         setIsRegister(false);
         setError('Registration successful! Please log in.');
-      } else {
+      }*/}
+     
         localStorage.setItem('token', data.token);
         setUser({ ...data.user, token: data.token });
-      }
+      
     } catch (err: any) {
       setError(err.message);
     }
@@ -36,7 +38,8 @@ export default function Login({ setUser }: any) {
       <div className="flex justify-center items-center w-1/2">
         <div className="bg-[#e5ebba] p-8 rounded-xl shadow-lg w-96">
           <h2 className="text-2xl font-semibold text-center mb-6 text-[#2f2f1a]">
-            {isRegister ? 'Create Account' : 'Welcome Back'}
+            Welcome Back
+            {/* {isRegister ? 'Create Account' : 'Welcome Back'} */}
           </h2>
           <form onSubmit={handleSubmit} className="space-y-4">
             <input
@@ -57,13 +60,14 @@ export default function Login({ setUser }: any) {
               type="submit"
               className="w-full bg-[#8fa325] text-white font-semibold py-2 rounded hover:bg-[#7b9021] transition-all"
             >
-              {isRegister ? 'Register' : 'Login'}
+              Login
+              {/* {isRegister ? 'Register' : 'Login'} */}
             </button>
           </form>
 
           {error && <p className="text-blue-500 text-sm mt-2 text-center">{error}</p>}
 
-          <div className="mt-4 text-center">
+         {/* <div className="mt-4 text-center">
             <button
               onClick={() => setIsRegister(!isRegister)}
               className="text-[#6a7a15] hover:underline font-medium"
@@ -71,8 +75,9 @@ export default function Login({ setUser }: any) {
               {isRegister
                 ? 'Already have an account? Login'
                 : 'Need an account? Register'}
+             
             </button>
-          </div>
+          </div>*/}
         </div>
       </div>
 

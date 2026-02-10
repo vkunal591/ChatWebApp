@@ -1,0 +1,13 @@
+{
+  "version": 8,
+  "name": "planet-style",
+  "sources": {
+    "pandet": {
+      "type": "vector",
+      "tiles": ["http://localhost:8080/data/planet/{z}/{x}/{y}.pbf"],
+      "minzoom": 0,
+      "maxzoom": 14
+    }
+  },
+  "layers": []
+}
