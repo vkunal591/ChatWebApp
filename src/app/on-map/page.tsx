@@ -267,7 +267,6 @@ export default function MapboxMap() {
     });
   };
 
-  // ================= PDF EXPORT =================
   // ------------------ REVERSE GEOCODING ------------------
   async function getPlaceName(lat: number, lng: number) {
     try {
@@ -282,12 +281,15 @@ export default function MapboxMap() {
     }
   }
 
-  // ------------------ EXPORT PDF ------------------
+
   // ------------------ EXPORT PDF ------------------
   const exportPDF = async () => {
     const map = mapRef.current;
     if (!map) return;
 
+
+const prevCenter = map.getCenter();
+const prevZoom = map.getZoom();
     // wait until map fully renders
     await new Promise<void>((resolve) => {
       if (map.loaded()) resolve();
@@ -306,6 +308,11 @@ export default function MapboxMap() {
     if (!ctx) return;
 
     // ------------------ 1️⃣ Draw map background ------------------
+ 
+    map.triggerRepaint();
+
+    await new Promise((r) => requestAnimationFrame(r));
+
     ctx.drawImage(mapCanvas, 0, 0);
 
     // ------------------ 2️⃣ Project function ------------------
@@ -314,65 +321,23 @@ export default function MapboxMap() {
       return [p.x, p.y];
     };
 
-    const drawData = drawRef.current?.getAll() ?? {
-      type: "FeatureCollection",
-      features: [],
-    };
+    const bounds = new maplibregl.LngLatBounds();
 
-    // ------------------ 3️⃣ Draw polygons ------------------
-    drawData.features
-      .filter((f) => f.geometry.type === "Polygon")
-      .forEach((f: any) => {
-        ctx.fillStyle = "rgba(0,255,153,0.35)";
-        ctx.strokeStyle = "#00ff99";
-        ctx.lineWidth = 2;
+    const drawData = drawRef.current?.getAll();
+    drawData?.features.forEach((f: any) => {
+      if (f.geometry.type === "Point") {
+        bounds.extend(f.geometry.coordinates);
+      }
+      if (f.geometry.type === "LineString") {
+        f.geometry.coordinates.forEach((c: any) => bounds.extend(c));
+      }
+      if (f.geometry.type === "Polygon") {
+        f.geometry.coordinates.flat().forEach((c: any) => bounds.extend(c));
+      }
+    });
 
-        ctx.beginPath();
-        f.geometry.coordinates.forEach((ring: any) => {
-          ring.forEach(([lng, lat]: [number, number], i: number) => {
-            const [x, y] = project([lng, lat]);
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
-          });
-        });
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-      });
-
-    // ------------------ 4️⃣ Draw dashed lines ------------------
-    drawData.features
-      .filter((f) => f.geometry.type === "LineString")
-      .forEach((f: any) => {
-        ctx.strokeStyle = "#ffcc00";
-        ctx.lineWidth = 2;
-        ctx.setLineDash([6, 4]);
-
-        ctx.beginPath();
-        f.geometry.coordinates.forEach(
-          ([lng, lat]: [number, number], i: number) => {
-            const [x, y] = project([lng, lat]);
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
-          },
-        );
-        ctx.stroke();
-        ctx.setLineDash([]);
-      });
-
-    // ------------------ 5️⃣ Draw points from MapboxDraw ------------------
-    drawData.features
-      .filter((f) => f.geometry.type === "Point")
-      .forEach((f: any) => {
-        const [x, y] = project(f.geometry.coordinates);
-        ctx.fillStyle = "#ff4444";
-        ctx.beginPath();
-        ctx.arc(x, y, 6, 0, Math.PI * 2);
-        ctx.fill();
-      });
-
-    // ------------------ 6️⃣ Draw custom markers with place names ------------------
-    // Fetch all place names in parallel for faster performance
+    markers.forEach((m) => bounds.extend([m.lng, m.lat]));
+   
     const placeNames = await Promise.all(
       markers.map((m) => getPlaceName(m.lat, m.lng)),
     );
@@ -395,6 +360,14 @@ export default function MapboxMap() {
       ctx.fillText(placeName, x + 10, y - 10);
     });
 
+map.fitBounds(bounds, {
+  padding: 80,
+  animate: false,
+});
+    map.triggerRepaint();
+    await new Promise((r) => requestAnimationFrame(r));
+
+    ctx.drawImage(map.getCanvas(), 0, 0);
     // ------------------ 7️⃣ Export as PDF ------------------
     // IMPORTANT: Use your **final canvas** here
     const imgData = canvas.toDataURL("image/png");
@@ -407,7 +380,9 @@ export default function MapboxMap() {
 
     pdf.addImage(imgData, "PNG", 0, 0, width, height);
     pdf.save("defence-map.pdf");
-  };
+    map.setCenter(prevCenter);
+    map.setZoom(prevZoom);
+  };;
 
   // ================= UI =================
   return (

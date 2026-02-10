@@ -1,19 +1,62 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { BASE_URL } from "@/api";
 import CallModal from "./modal/CallModal";
-import { FaMap, FaPhone, FaVideo } from "react-icons/fa";
+import {
+  Paperclip,
+  Fingerprint,
+  Send,
+  Lock,
+  Phone,
+  Video
+} from "lucide-react";
 import { Socket } from "socket.io-client";
-import Link from "next/link";
 
+import { jwtDecode } from "jwt-decode";
+import Admin from "@/app/admin/page";
+
+
+
+import {
+  FiMessageSquare,
+  FiFolder,
+  FiFileText,
+  FiSettings,
+  FiLogOut,
+  FiSearch,
+} from "react-icons/fi";
+
+// type ChatProps = {
+//   user: {
+//     id: string;
+//     token: string;
+//     username: string;
+//     status: string;
+//     role: string;
+//   };
+//   socket: Socket;
+//   setUser: (user: any) => void;
+// };
 type ChatProps = {
-  user: { id: string; token: string; username: string };
   socket: Socket;
-  setUser: (user: any) => void;
 };
-
-const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
+interface ChatUser {
+  id: string;
+  username: string;
+  email?: string;
+  role?: string;
+  status?: string;
+  isBlocked?: boolean;
+}
+type JwtPayload = {
+  id: string;
+  role: string;
+  iat: number;
+  exp: number;
+};
+const Chat: React.FC<ChatProps> = ({ socket}) => {
   const [friends, setFriends] = useState<any[]>([]);
   const [friendUsername, setFriendUsername] = useState<string>("");
   const [selectedFriend, setSelectedFriend] = useState<any>(null);
@@ -32,7 +75,74 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
   const ringtoneRef = useRef<HTMLAudioElement | null>(null);
   const [selectedMedia, setSelectedMedia] = useState<File | null>(null);
   const beepRef = useRef<HTMLAudioElement | null>(null);
- 
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [search, setSearch] = useState("");
+  const [user, setUser] = useState<any>(null);
+  
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!user) return;
+
+    if (user.role === "admin") {
+      router.replace("/admin"); // 👈 admin panel route
+    }
+  }, [user, router]);
+
+useEffect(() => {
+  if (typeof window === "undefined") return;
+
+  const token = localStorage.getItem("token");
+  if (!token) return;
+
+  try {
+    const cleanToken = token.startsWith("Bearer ")
+      ? token.split(" ")[1]
+      : token;
+
+    const decoded: any = jwtDecode(cleanToken);
+
+    setUser({
+      id: decoded.id,
+      role: decoded.role,
+      token: cleanToken,
+      username: decoded.username || "User",
+    });
+  } catch (err) {
+    console.error("Invalid token", err);
+  }
+}, []);
+
+
+const [isAdmin, setIsAdmin] = useState(false);
+  const receiverId = selectedFriend?._id || selectedFriend?.id;
+  
+  useEffect(() => {
+    // extra safety for Next.js
+    if (typeof window === "undefined") return;
+
+    try {
+      const rawToken = localStorage.getItem("token");
+
+      if (!rawToken) return;
+
+      const token = rawToken.startsWith("Bearer ")
+        ? rawToken.split(" ")[1]
+        : rawToken;
+
+      const decoded = jwtDecode<JwtPayload>(token);
+
+      console.log("Decoded token ✅", decoded);
+
+      setIsAdmin(decoded.role === "admin");
+    } catch (err) {
+      console.error("JWT decode failed ❌", err);
+    }
+  }, []);
+  
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   const servers = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
   useEffect(() => {
@@ -65,17 +175,17 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
 
     socket.on("callEnded", () => endCall());
 
-    socket.on("receiveMessage", (msg) => {
-      if (!selectedFriend) return;
+    // socket.on("receiveMessage", (msg) => {
+    //   if (!selectedFriend) return;
 
-      const isForThisChat =
-        (msg.sender === selectedFriend._id && msg.receiver === user.id) ||
-        (msg.sender === user.id && msg.receiver === selectedFriend._id);
+    //   const isForThisChat =
+    //     (msg.sender === selectedFriend._id && msg.receiver === user.id) ||
+    //     (msg.sender === user.id && msg.receiver === selectedFriend._id);
 
-      if (isForThisChat) {
-        setMessages((prev) => [...prev, msg]);
-      }
-    });
+    //   if (isForThisChat) {
+    //     setMessages((prev) => [...prev, msg]);
+    //   }
+    // });
 
     socket.on("onlineUsers", (users: string[]) => {
       setOnlineUsers(users);
@@ -93,7 +203,7 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
       socket.off("incomingCall");
       socket.off("callAnswered");
       socket.off("callEnded");
-      socket.off("receiveMessage");
+      // socket.off("receiveMessage");
       socket.off("typing");
       socket.off("stopTyping");
     };
@@ -128,7 +238,7 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
 
       socket.emit("callUser", {
         from: user.id,
-        to: selectedFriend._id,
+        to: receiverId,
         signal: offer, // offer includes { type: "offer", sdp: "..." }
         type, // "video" or "audio"
       });
@@ -195,6 +305,10 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
   const addFriend = async () => {
     if (!friendUsername.trim()) return alert("Enter a username");
     try {
+      if (!user?.token) {
+        alert("Unauthorized");
+        return;
+      }
       const res = await fetch(`${BASE_URL}/api/friends`, {
         method: "POST",
         headers: {
@@ -215,61 +329,79 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
     }
   };
 
-  const fetchFriends = async () => {
-    try {
-      const res = await fetch(`${BASE_URL}/api/friends`, {
-        headers: { Authorization: `Bearer ${user.token}` },
-      });
-      // console.log("friends:", friends, Array.isArray(friends));
+ const fetchFriends = async () => {
+   if (!user?.token) return; // ✅ SAFETY
 
-      const data = await res.json();
-      //  console.log("friends:", data);
-      setFriends(data);
-    } catch (error) {
-      console.error("Fetch friends error:", error);
-    }
-  };
+   try {
+     const res = await fetch(`${BASE_URL}/api/friends`, {
+       method: "GET",
+       headers: {
+         Authorization: `Bearer ${user.token}`,
+       },
+     });
 
-  const fetchMessages = async () => {
-    try {
-      const res = await fetch(
-        `${BASE_URL}/api/messages/${selectedFriend?._id}`,
-        {
-          headers: { Authorization: `Bearer ${user.token}` },
-        },
-      );
-      const data = await res.json();
-      setMessages(data);
-    } catch (error) {
-      console.error("Fetch friends error:", error);
-    }
-  };
+     const result = await res.json();
+
+     const list = Array.isArray(result)
+       ? result
+       : Array.isArray(result.data)
+         ? result.data
+         : [];
+
+     setFriends(list);
+   } catch (error) {
+     console.error("Fetch friends error:", error);
+     setFriends([]);
+   }
+ };
+ useEffect(() => {
+   if (!user) return;
+
+   if (isAdmin) {
+     fetchAdminUsersAndFriends();
+   } else {
+     fetchFriends();
+   }
+ }, [user, isAdmin]);
+
+ const fetchMessages = async (friendId: string) => {
+   if (!user?.token) return; // ✅ guard
+
+   try {
+     const res = await fetch(`${BASE_URL}/api/messages/${friendId}`, {
+       method: "GET",
+       headers: {
+         Authorization: `Bearer ${user.token}`,
+       },
+     });
+
+     const data = await res.json();
+     setMessages(data);
+   } catch (error) {
+     console.error("Fetch messages error:", error);
+   }
+ };
+
   useEffect(() => {
-    console.log(selectedFriend);
-    if (selectedFriend) {
-      fetchMessages();
-    }
-  }, [selectedFriend]);
+    if (!selectedFriend?._id) return;
 
-  useEffect(() => {
-    fetchFriends();
-  }, []);
+    setMessages([]);
+    fetchMessages(selectedFriend._id);
+  }, [selectedFriend?._id]);
 
   const sendMessage = async () => {
-    // Don’t send if no message or media selected
     if ((!message.trim() && !selectedMedia) || !selectedFriend) return;
 
-    // Create message base object
     const msg: any = {
       sender: user.id,
-      receiver: selectedFriend._id,
+      receiver: receiverId,
       content: message.trim(),
       type: selectedMedia ? "media" : "text",
       timestamp: new Date().toISOString(),
     };
 
     try {
-      // If a media file is selected — upload to backend first
+      // 1️⃣ If media selected, upload first
       if (selectedMedia) {
         const formData = new FormData();
         formData.append("file", selectedMedia);
@@ -283,35 +415,53 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
         });
 
         const uploadData = await uploadRes.json();
+
         if (!uploadRes.ok || !uploadData.url) {
-          console.error("Upload failed:", uploadData);
           alert("Failed to upload file");
           return;
         }
 
-        // Add file URL to message
         msg.mediaUrl = uploadData.url;
         msg.fileName = selectedMedia.name;
         msg.fileType = selectedMedia.type;
       }
 
-      // Emit to socket server
+      // 3️⃣ Emit to socket
       socket.emit("sendMessage", msg);
 
-      // Optimistically update UI
-      // setMessages((prev) => [...prev, msg]);
-
-      // Reset fields
+      // 4️⃣ Reset input
       setMessage("");
       setSelectedMedia(null);
+
       socket.emit("stopTyping", {
         to: selectedFriend._id,
         from: user.username,
       });
     } catch (error) {
       console.error("Error sending message:", error);
-      alert("Something went wrong while sending your message");
+      alert("Something went wrong");
     }
+  };
+
+  const getDateLabel = (dateStr: string) => {
+    const msgDate = new Date(dateStr);
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+
+    const isSameDay = (d1: Date, d2: Date) =>
+      d1.getDate() === d2.getDate() &&
+      d1.getMonth() === d2.getMonth() &&
+      d1.getFullYear() === d2.getFullYear();
+
+    if (isSameDay(msgDate, today)) return "Today";
+    if (isSameDay(msgDate, yesterday)) return "Yesterday";
+
+    return msgDate.toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
   };
 
   const handleTyping = (val: string) => {
@@ -327,306 +477,505 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
     }
   };
 
+  const [users, setUsers] = useState<ChatUser[]>([]);
+ const fetchAdminUsersAndFriends = async () => {
+   try {
+     const token = localStorage.getItem("token");
+
+     const [usersRes, friendsRes] = await Promise.all([
+       fetch(`${BASE_URL}/api/user-list`, {
+         method: "GET",
+         headers: {
+           "Content-Type": "application/json",
+           Authorization: `Bearer ${token}`,
+         },
+       }),
+       fetch(`${BASE_URL}/api/friends`, {
+         method: "GET",
+         headers: {
+           "Content-Type": "application/json",
+           Authorization: `Bearer ${token}`,
+         },
+       }),
+     ]);
+     if (!usersRes.ok || !friendsRes.ok) {
+       throw new Error("API request failed");
+     }
+     const usersData = await usersRes.json();
+     const friendsData = await friendsRes.json();
+     const list = Array.isArray(usersData) ? usersData : usersData.data || [];
+
+     const mappedUsers: ChatUser[] = list.map((u: any) => ({
+       id: u.id || u._id,
+       username: u.username,
+       email: u.email,
+       role: u.role,
+       status: u.status ?? "offline",
+       isBlocked: u.isBlocked,
+     }));
+
+     setUsers(mappedUsers);
+     setFriends(
+       Array.isArray(friendsData) ? friendsData : friendsData.data || [],
+     );
+   } catch (error) {
+     console.error("Failed to fetch admin users & friends:", error);
+   }
+ };
   useEffect(() => {
-    const handleReceiveMessage = (msg: any) => {
-      if (!selectedFriend) return;
+    if (isAdmin) {
+      fetchAdminUsersAndFriends();
+    } else {
+      fetchFriends();
+    }
+  }, [isAdmin]);
+ 
+ useEffect(() => {
+  if (!user || !selectedFriend) return; // ✅ guard
 
-      const isForThisChat =
-        (msg.sender === selectedFriend._id && msg.receiver === user.id) ||
-        (msg.sender === user.id && msg.receiver === selectedFriend._id);
+  const handleReceiveMessage = (msg: any) => {
+    const isForThisChat =
+      (msg.sender === selectedFriend._id && msg.receiver === user.id) ||
+      (msg.sender === user.id && msg.receiver === selectedFriend._id);
 
-      if (isForThisChat) {
-        setMessages((prev) => [...prev, msg]);
+    if (isForThisChat) {
+      setMessages((prev) => [...prev, msg]);
 
-        if (beepRef.current) {
-          beepRef.current.currentTime = 0;
-          beepRef.current.play().catch(() => {});
-        }
+      beepRef.current?.play().catch(() => {});
+    }
+  };
+
+  socket.on("receiveMessage", handleReceiveMessage);
+
+  return () => {
+    socket.off("receiveMessage", handleReceiveMessage);
+  };
+}, [socket, selectedFriend, user]);
+
+  const handleLogout = async () => {
+    try {
+     
+      const token = localStorage.getItem("token");
+      if (!token) return;
+
+      const res = await fetch(`${BASE_URL}/api/logout`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!res.ok) {
+        throw new Error("Logout failed");
       }
-    };
 
-    socket.on("receiveMessage", handleReceiveMessage);
+      // ✅ cleanup after backend confirms logout
+      localStorage.removeItem("token");
 
-    return () => {
-      socket.off("receiveMessage", handleReceiveMessage); // ✔ OK now, returns void
-    };
-  }, [socket, selectedFriend]);
+      if (socket?.connected) socket.disconnect();
 
+      window.location.href = "/login";
+    } catch (error) {
+      console.error("Logout error:", error);
+      localStorage.removeItem("token");
+      if (socket?.connected) socket.disconnect();
+    window.location.href = "/login";
+    }
+  };
+  const filteredFriends = friends.filter((friend) => {
+    if (!friend?.username) return false;
+
+    return friend.username.toLowerCase().includes(search.trim().toLowerCase());
+  });
+  if (!user) {
+    return (
+      <div className="h-screen flex items-center justify-center text-slate-600">
+        Please login to start chat
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col h-screen w-full rounded-lg bg-[#f7f8f3] shadow-lg ">
-      {/* Top bar */}
-      <div className="bg-[#07522c] text-white  flex justify-between px-6 py-3 items-center">
-        <div className="font-bold text-lg">LocalConnect</div>
-        <div className="flex items-center gap-4">
-          <span className="flex items-center gap-1 text-sm">
-            <span className="w-2 h-2 bg-green-400 rounded-full" />
-            Connected
-          </span>
-          <div className="bg-[#a5b863] text-sm px-3 py-1 rounded-full">
-            {user.username}
-          </div>
-          <button
-            onClick={() => {
-              localStorage.removeItem("token");
-              socket.disconnect();
-              setUser(null);
-            }}
-            className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm"
-          >
-            Logout
-          </button>
-        </div>
-      </div>
-
       {/* Main layout */}
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
-        <div className="w-1/4 bg-white border-r flex flex-col">
-          <div className="p-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl text-[#07522c] font-bold mb-3">
-                Contacts
-              </h2>
+        {!isAdmin && (
+          <div className="w-[320px] h-screen bg-white border-r flex flex-col justify-between">
+            {/* TOP */}
+            <div className="p-4 space-y-6">
+              {/* LOGO */}
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-lg bg-[#0B1F3B] flex items-center justify-center">
+                  <img
+                    src="/assets/logo/localchatlogo.png"
+                    alt="logo"
+                    className="object-contain h-8 w-8 filter brightness-0 invert "
+                  />
+                </div>
+                <div>
+                  <h1 className="text-[#0B1F3B] font-bold text-lg leading-tight">
+                    LocalChat
+                  </h1>
+                  <p className="text-xs text-slate-400 tracking-wide">
+                    SECURE TALK
+                  </p>
+                </div>
+              </div>
+              <input
+                type="text"
+                value={friendUsername}
+                onChange={(e) => setFriendUsername(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                placeholder="Add friend…"
+                className="
+    w-full mb-2 px-3 py-1.5 text-sm
+    rounded-md
+    border border-[#1f3a5f]
+    text-gray-600 placeholder-gray-400
+    focus:outline-none focus:ring-1 focus:ring-[#1f3a5f]/400 focus:border-[#1f3a5f]/400
+    transition
+  "
+              />
 
-              <Link
-                href={"/on-map"}
-                className="  rounded-md p-1 m-1 w-1/4 flex items-center justify-center gap-2 bg-[#07522c]/80 border-2 border-gray-300 shadow shadow-[#07522c] "
+              <button
+                disabled={!friendUsername}
+                onClick={addFriend}
+                className="
+    w-full mb-4 py-1.5 text-sm font-semibold
+    rounded-md
+    bg-gradient-to-br from-[#0f2a44] to-[#1e4b6e]
+    text-white shadow
+    transition
+    disabled:opacity-50 disabled:cursor-not-allowed
+  "
               >
-                <FaMap size={18} color="white" /> Map
-              </Link>
+                Add Friend
+              </button>
+
+              {/* PROFILE */}
+              <div className="flex items-center gap-3 border rounded-xl p-3">
+                <div className="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center">
+                  <img
+                    src="/assets/logo/localchatlogo.png"
+                    alt="logo"
+                    className="object-contain h-8 w-8 "
+                  />
+                </div>
+                <div className="flex-1">
+                  <p className="font-semibold text-sm text-slate-800">
+                    {user.username}
+                  </p>
+                  <span className="inline-block mt-1 text-xs px-2 py-[2px] rounded bg-green-100 text-green-600 font-semibold">
+                    LEVEL - 3
+                  </span>
+                </div>
+              </div>
+
+              {/* NAV */}
+              <nav className="space-y-1 text-sm">
+                {/* ACTIVE ITEM */}
+                <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-blue-50 border-l-4 border-blue-800">
+                  <div className="flex items-center gap-3 text-blue-900 font-semibold">
+                    <FiMessageSquare size={18} />
+                    Messages
+                  </div>
+                  <span className="h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center">
+                    3
+                  </span>
+                </div>
+
+                {/* OTHER ITEMS */}
+                <div className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer">
+                  <FiFolder size={18} />
+                  Directory
+                </div>
+
+                <div className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer">
+                  <FiFileText size={18} />
+                  Files
+                </div>
+
+                <div className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer">
+                  <FiFileText size={18} />
+                  Reports
+                </div>
+
+                <div className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer">
+                  <FiSettings size={18} />
+                  Settings
+                </div>
+              </nav>
+              {/* LOGOUT */}
+              <div className="mt-25">
+                <button
+                  onClick={() => handleLogout()}
+                  className="w-full flex items-center gap-3 px-4 py-2 rounded-lg border border-red-200 bg-red-50 text-red-500 font-semibold hover:bg-red-500 hover:text-white transition justify-center"
+                >
+                  <FiLogOut size={18} />
+                  Logout
+                </button>
+              </div>
             </div>
-            <input
-              type="text"
-              placeholder="Add friend..."
-              value={friendUsername}
-              onChange={(e) => setFriendUsername(e.target.value)}
-              className="w-full p-2 border text-[#07522c] rounded mb-2"
-            />
-            <button
-              onClick={addFriend}
-              className="w-full bg-[#07522c] hover:bg-[#07522c]/70 text-white p-2 rounded"
-            >
-              Add Friend
-            </button>
           </div>
+        )}
+        <div
+          className={`${
+            isAdmin ? "w-[480px]" : "w-[400px]"
+          } h-screen border-r bg-white flex flex-col`}
+        >
+          <div className="p-4 space-y-3">
+            <h2 className="text-sm font-bold tracking-wide text-slate-900">
+              {isAdmin ? "USERS & FRIENDS" : "ACTIVE FRIENDS"}
+            </h2>
+
+            {/* SEARCH */}
+            <div className="relative">
+              <FiSearch
+                size={16}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+              />
+              <input
+                type="text"
+                placeholder="Search..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-800"
+              />
+            </div>
+          </div>
+
+          {/* CHANNEL LIST */}
           <div className="flex-1 overflow-y-auto">
-            <h4 className="text-xs font-semibold px-3 py-1 text-gray-500">
-              ONLINE
-            </h4>
-            {friends &&
-              friends
-                .filter((f) => onlineUsers.includes(f._id))
-                .map((friend) => (
+            {/* 👤 ADMIN USERS */}
+            {isAdmin && (
+              <>
+                <p className="px-4 py-2 text-xs font-semibold text-slate-500">
+                  USERS
+                </p>
+                {users.map((u) => (
                   <div
-                    key={friend._id}
-                    onClick={() => setSelectedFriend(friend)}
-                    className={`cursor-pointer flex items-center gap-2 px-3 py-2 hover:bg-gray-100 ${selectedFriend?._id === friend._id ? "bg-green-100" : ""}`}
+                    key={u.id}
+                    onClick={() => setSelectedFriend(u)}
+                    className="cursor-pointer"
                   >
-                    <div className="w-8 h-8 bg-green-500 text-[#07522c] flex items-center justify-center rounded-full font-semibold">
-                      {friend.username[0]}
-                    </div>
-                    <div>
-                      <p className="text-sm text-[#07522c] font-medium">
-                        {friend.username}
-                      </p>
-                      <p className="text-xs text-green-500">Available</p>
-                    </div>
+                    <ChannelItem name={u.username} status={u.status} />
                   </div>
                 ))}
-            <h4 className="text-xs font-semibold px-3 py-1 mt-2 text-gray-500">
-              OFFLINE
-            </h4>
-            {friends
-              .filter((f) => !onlineUsers.includes(f._id))
-              .map((friend) => (
-                <div
-                  key={friend._id}
-                  onClick={() => setSelectedFriend(friend)}
-                  className={`cursor-pointer flex items-center gap-2 px-3 py-2 hover:bg-gray-100 ${selectedFriend?._id === friend._id ? "bg-green-100" : ""}`}
-                >
-                  <div className="w-8 h-8 bg-gray-300 text-[#07522c] flex items-center justify-center rounded-full font-semibold">
-                    {friend.username[0]}
-                  </div>
-                  <div>
-                    <p className="text-sm text-[#07522c] font-medium">
-                      {friend.username}
-                    </p>
-                    <p className="text-xs text-gray-400">Offline</p>
-                  </div>
-                </div>
-              ))}
+              </>
+            )}
+
+            {/* 👥 FRIENDS (ADMIN + USER) */}
+            <p className="px-4 py-2 text-xs font-semibold text-slate-500">
+              FRIENDS
+            </p>
+            {filteredFriends.map((f) => (
+              <div
+                key={f._id}
+                onClick={() => setSelectedFriend(f)}
+                className="cursor-pointer"
+              >
+                <ChannelItem name={f.username} status={f.status} />
+              </div>
+            ))}
           </div>
         </div>
-
         {/* Chat window */}
-        <div className="flex-1 flex flex-col bg-white">
-          {selectedFriend ? (
-            <>
-              <div className="border-b px-4 py-2 flex justify-between items-center">
-                <div>
-                  <h2 className="font-semibold text-[#07522c] ">
-                    {selectedFriend.username}
-                  </h2>
-                  <p className="text-xs text-gray-500">Last seen recently</p>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => startCall("audio")}
-                    className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded flex items-center gap-2"
-                  >
-                    <FaPhone /> Voice
-                  </button>
-                  <button
-                    onClick={() => startCall("video")}
-                    className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded flex items-center gap-2"
-                  >
-                    <FaVideo /> Video
-                  </button>
-                </div>
-              </div>
-              <div className="flex-1 p-4 overflow-y-auto">
-                {messages.map((msg, i) => (
-                  <div
-                    key={i}
-                    className={`my-1 ${
-                      msg.sender === user.id ? "text-right" : "text-left"
-                    }`}
-                  >
-                    <div
-                      className={`inline-block overflow-hidden line-clamp-2 text-wrap px-3 py-2 rounded-lg max-w-[70%] ${
-                        msg.sender === user.id
-                          ? "bg-green-500 text-white"
-                          : "bg-gray-200 text-gray-800"
-                      }`}
-                    >
-                      {msg.type === "media" && msg.mediaUrl ? (
-                        msg.mediaUrl.match(/\.(jpeg|jpg|png|gif)$/i) ? (
-                          <img
-                            src={msg.mediaUrl}
-                            alt="media"
-                            className="rounded-lg mb-1 max-h-40"
-                          />
-                        ) : msg.mediaUrl.match(/\.(mp4|webm|ogg)$/i) ? (
-                          <video
-                            src={msg.mediaUrl}
-                            controls
-                            className="rounded-lg mb-1 max-h-40"
-                          />
-                        ) : (
-                          <a
-                            href={msg.mediaUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="underline"
-                          >
-                            📎 Download File
-                          </a>
-                        )
-                      ) : (
-                        // Process text to convert URLs into clickable links
-                        msg.content
-                          .split(/(https?:\/\/[^\s]+)/g)
-                          .map((part: any, idx: any) =>
-                            part.match(/https?:\/\/[^\s]+/) ? (
-                              <a
-                                key={idx}
-                                href={part}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="underline text-blue-500"
-                              >
-                                {part}
-                              </a>
-                            ) : (
-                              <span key={idx}>{part}</span>
-                            ),
-                          )
-                      )}
-                    </div>
-                  </div>
-                ))}
 
-                {typingUser && (
-                  <p className="text-xs italic text-gray-400">
-                    {typingUser} is typing...
+        <div className=" bg-[#f4f7fb] flex items-center justify-center w-full ">
+          {/* Chat Container */}
+          <div className="w-full max-w-4xl bg-white shadow-xl  overflow-hidden h-full">
+            {/* Header */}
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center">
+                  <img
+                    src="/assets/logo/localchatlogo.png"
+                    alt="logo"
+                    className="object-contain h-8 w-8"
+                  />
+                </div>
+
+                <div>
+                  <h2 className="font-semibold text-slate-800">
+                    {selectedFriend ? selectedFriend.username : "Select a chat"}
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    FIELD OFFICER • DELHI
                   </p>
-                )}
-                <div ref={messagesEndRef}></div>
+                </div>
               </div>
-              {/* Message Input + Media Upload */}
-              <div className="border-t p-3 flex flex-col gap-2">
-                {/* Media preview (WhatsApp-style) */}
-                {selectedMedia && (
-                  <div className="flex items-center gap-3 bg-gray-100 p-2 rounded">
-                    {selectedMedia.type.startsWith("image/") ? (
-                      <img
-                        src={URL.createObjectURL(selectedMedia)}
-                        alt="preview"
-                        className="w-16 h-16 object-cover rounded"
-                      />
-                    ) : selectedMedia.type.startsWith("video/") ? (
-                      <video
-                        src={URL.createObjectURL(selectedMedia)}
-                        className="w-20 h-16 rounded"
-                        controls
-                      />
-                    ) : (
-                      <div className="text-sm bg-gray-200 px-3 py-1 rounded">
-                        📄 {selectedMedia.name}
+
+              {/* RIGHT SIDE ACTIONS */}
+              <div className="flex items-center gap-3">
+                {/* AUDIO CALL */}
+                <button
+                  onClick={() => startCall("audio")}
+                  disabled={!selectedFriend}
+                  className="p-2 rounded-full hover:bg-slate-100 text-green-600 disabled:opacity-70 cursor-pointer"
+                  title="Audio Call"
+                >
+                  <Phone size={19} />
+                </button>
+
+                {/* VIDEO CALL */}
+                <button
+                  onClick={() => startCall("video")}
+                  disabled={!selectedFriend}
+                  className="p-2 rounded-full hover:bg-slate-100 text-blue-600 disabled:opacity-70 cursor-pointer"
+                  title="Video Call"
+                >
+                  <Video size={20} />
+                </button>
+
+                {/* TLS BADGE */}
+                <span className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-md bg-orange-100 text-orange-700 border border-orange-500">
+                  <Lock size={12} className="text-orange-700" />
+                  TLS 1.3
+                </span>
+              </div>
+            </div>
+
+            {/* Messages */}
+            <div className="bg-[#f8fafc] p-6 space-y-6 h-[460px] overflow-y-auto">
+              {/* Date badge */}
+
+              {messages.map((msg: any, index: number) => {
+                const isOutgoing = msg.sender === user.id;
+
+                const currentDate = getDateLabel(msg.timestamp);
+                const prevDate =
+                  index > 0
+                    ? getDateLabel(messages[index - 1].timestamp)
+                    : null;
+
+                const showDate = index === 0 || currentDate !== prevDate;
+
+                return (
+                  <div key={msg._id || index}>
+                    {/* 🔥 Date Separator */}
+                    {showDate && (
+                      <div className="flex items-center justify-center my-4">
+                        <div className="px-3 py-1 rounded-full bg-slate-200 text-[10px] font-semibold text-slate-600">
+                          {currentDate}
+                        </div>
                       </div>
                     )}
-                    <button
-                      onClick={() => setSelectedMedia(null)}
-                      className="text-red-500 text-sm font-semibold hover:underline"
+
+                    <div
+                      className={`max-w-md ${isOutgoing ? "ml-auto text-right" : ""}`}
                     >
-                      ✕ Remove
-                    </button>
+                      {/* Confidential label */}
+                      <div className="mb-1">
+                        <span className="text-[8px] text-slate-700 bg-amber-500 rounded-[5px] px-1.5 py-0.5 font-semibold inline-block">
+                          CONFIDENTIAL
+                        </span>
+                      </div>
+
+                      {/* Message bubble */}
+                      <div
+                        className={`mt-1 rounded-xl px-4 py-3 shadow inline-block max-w-full break-words whitespace-pre-wrap ${
+                          isOutgoing
+                            ? "bg-gradient-to-br from-[#0f2a44] to-[#1e4b6e] text-white"
+                            : "bg-white text-slate-700"
+                        }`}
+                      >
+                        {/* TEXT MESSAGE */}
+                        {msg.type === "text" && (
+                          <p className="text-sm break-words whitespace-pre-wrap">
+                            {msg.content}
+                          </p>
+                        )}
+
+                        {/* MEDIA MESSAGE */}
+                        {msg.type === "media" && msg.mediaUrl && (
+                          <>
+                            {msg.fileType?.startsWith("image") ? (
+                              <img
+                                src={msg.mediaUrl}
+                                className="rounded-md max-w-xs"
+                                alt="media"
+                              />
+                            ) : (
+                              <a
+                                href={msg.mediaUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                {msg.fileName}
+                              </a>
+                            )}
+                          </>
+                        )}
+                      </div>
+
+                      {/* Timestamp */}
+                      <p
+                        className={`mt-1 flex gap-2 text-[10px] text-slate-400 ${
+                          isOutgoing ? "justify-end" : ""
+                        }`}
+                      >
+                        <span>
+                          {new Date(msg.timestamp).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                      </p>
+                    </div>
                   </div>
-                )}
-
-                {/* Message + send area */}
-                <div className="flex items-center gap-2">
-                  <label className="cursor-pointer flex items-center justify-center w-10 h-10 bg-gray-200 rounded-full hover:bg-gray-300">
-                    📎
-                    <input
-                      type="file"
-                      accept="image/*,video/*,application/pdf"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) setSelectedMedia(file);
-                      }}
-                    />
-                  </label>
-
-                  <input
-                    type="text"
-                    value={message}
-                    onChange={(e) => handleTyping(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault(); // prevents newline or form submission
-                        sendMessage();
-                      }
-                    }}
-                    placeholder="Type a message..."
-                    className="flex-1 text-gray-700 border rounded-l px-3 py-2 text-sm"
-                  />
-
-                  <button
-                    onClick={sendMessage}
-                    className="bg-[#07522c]/80 hover:bg-[#07522c] text-white px-4 py-2 rounded-r"
-                  >
-                    ➤
-                  </button>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="flex-1 flex items-center justify-center text-gray-400">
-              Select a contact to start chatting
+                );
+              })}
+              <div ref={messagesEndRef} />
             </div>
-          )}
+
+            {/* Hidden file input – ONE TIME ONLY */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              accept="image/*,video/*,application/pdf"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  setSelectedMedia(file);
+                }
+              }}
+            />
+
+            {/* Input */}
+            <div className="flex items-center gap-3 px-6 py-4 bg-white">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <Paperclip size={18} />
+              </button>
+              {selectedMedia && (
+                <div className="px-6 py-2 text-xs text-slate-600 bg-slate-100 flex items-center gap-2">
+                  {selectedMedia.name}
+                </div>
+              )}
+              <input
+                placeholder="Type message..."
+                value={message}
+                onChange={(e) => handleTyping(e.target.value)}
+                className="flex-1 rounded-lg border px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+
+              <button className="text-slate-400 hover:text-slate-600">
+                <Fingerprint size={18} />
+              </button>
+              <button
+                onClick={sendMessage}
+                className="bg-[#0f2a44] text-white p-2 rounded-full hover:bg-[#163b5c]"
+              >
+                <Send size={16} />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -683,6 +1032,80 @@ const Chat: React.FC<ChatProps> = ({ user, socket, setUser }) => {
       />
     </div>
   );
+  
 };
 
 export default Chat;
+const ChannelItem = ({
+  name,
+  message,
+  time,
+  unread,
+  status,
+  active = false,
+  urgent = false,
+  avatar,
+}: any) => {
+  const statusColorMap: any = {
+    online: "bg-green-500",
+    offline: "bg-gray-400",
+    pending: "bg-yellow-400",
+  };
+
+  return (
+    <div
+      className={`relative flex items-center gap-3 px-4 py-3 cursor-pointer
+      ${urgent ? "bg-red-50" : "hover:bg-slate-50"}`}
+    >
+      {(active || urgent) && (
+        <span
+          className={`absolute left-0 top-0 h-full w-1
+          ${urgent ? "bg-red-600" : "bg-blue-800"}`}
+        />
+      )}
+
+      <div className="relative">
+        <div className="h-10 w-10 rounded-full border-2 border-slate-200 flex items-center justify-center bg-white">
+          <img
+            src={avatar || "/assets/logo/localchatlogo.png"}
+            alt={name}
+            className="object-cover h-8 w-8 rounded-full"
+          />
+        </div>
+
+        <span
+          className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white
+          ${urgent ? "bg-red-500" : statusColorMap[status]}`}
+        />
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between">
+          <p
+            className={`text-sm font-semibold truncate
+            ${urgent ? "text-red-600" : "text-slate-900"}`}
+          >
+            {name}
+          </p>
+          {time && <span className="text-xs text-slate-400">{time}</span>}
+        </div>
+
+        <p
+          className={`text-xs truncate
+          ${urgent ? "text-red-600 font-semibold" : "text-slate-500"}`}
+        >
+          {message}
+        </p>
+      </div>
+
+      {unread > 0 && (
+        <span
+          className={`h-5 w-5 flex items-center justify-center rounded-full text-xs text-white font-semibold
+          ${urgent ? "bg-red-600" : "bg-blue-800"}`}
+        >
+          {unread}
+        </span>
+      )}
+    </div>
+  );
+};

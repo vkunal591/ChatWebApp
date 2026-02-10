@@ -80,7 +80,8 @@ export default function Home() {
     <div className="min-h-screen bg-gray-100 flex items-center justify-center">
       {user ? (
         <>
-          <Chat user={user} socket={socket} setUser={setUser} />
+          {/* <Chat user={user} socket={socket} setUser={setUser} /> */}
+        <Chat socket={socket} />
           {/* <OfflineMap /> */}
           {/* <Map />  */}
         </>
@@ -88,8 +89,8 @@ export default function Home() {
         <Login
           setUser={(u: any) => {
             setUser(u);
-            localStorage.setItem('user', JSON.stringify(u));
-            localStorage.setItem('token', u.token);
+            localStorage.setItem("user", JSON.stringify(u));
+            localStorage.setItem("token", u.token);
           }}
         />
       )}
